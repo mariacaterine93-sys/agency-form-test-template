@@ -1,6 +1,6 @@
 import { test } from '@playwright/test';
 import { config } from '../../../config';
-import { AgencyFormPage } from '../../pages/QgcgdPages/AgencyForm.page';
+import { AgencyFormPage } from '../../pages/CC Apply/AgencyForm.page';
 
 test('Agency form starter flow', async ({ page }) => {
   const form = new AgencyFormPage(page);

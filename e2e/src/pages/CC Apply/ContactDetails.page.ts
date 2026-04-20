@@ -1,6 +1,6 @@
 import { expect, Locator, Page } from "@playwright/test";
 import { config } from "../../../config";
-import { AgencyFormPage } from "../AgencyForm.page";
+import { AgencyFormPage } from "./AgencyForm.page";
 
 export class ContactDetailsPage extends AgencyFormPage {
     readonly homeAddress = "360 EDWARD ST BRISBANE CITY QLD 4000";
