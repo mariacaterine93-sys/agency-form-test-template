@@ -92,12 +92,23 @@ export class ContactDetailsPage extends AgencyFormPage {
     }
 
     async chooseEmailContactPreference() {
-        if (await this.preferredContactEmailOption.count()) {
-            await this.preferredContactEmailOption.scrollIntoViewIfNeeded().catch(() => {});
-            await this.preferredContactEmailOption.check().catch(async () => {
-                await this.preferredContactEmailOption.click();
-            });
+        const emailRadioFirst = this.page.getByRole("radio", { name: /^email$/i }).first();
+        const emailRadioLast = this.page.getByRole("radio", { name: /^email$/i }).last();
+
+        for (const radio of [emailRadioFirst, emailRadioLast]) {
+            if (await radio.count()) {
+                await radio.scrollIntoViewIfNeeded().catch(() => {});
+                await radio.check({ force: true }).catch(async () => {
+                    await radio.click({ force: true });
+                });
+
+                if (await radio.isChecked().catch(() => false)) {
+                    return;
+                }
+            }
         }
+
+        await this.page.getByText("Email", { exact: true }).last().click({ force: true });
     }
 
     async completeMyIdContactDetails() {
