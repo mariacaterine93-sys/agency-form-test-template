@@ -1,6 +1,6 @@
 import { expect, Locator, Page } from "@playwright/test";
 import { config } from "../../../config";
-import { AgencyFormPage } from "../AgencyForm.page";
+import { AgencyFormPage } from "./AgencyForm.page";
 
 export class ContactDetailsPage extends AgencyFormPage {
     readonly homeAddress = "360 EDWARD ST BRISBANE CITY QLD 4000";
@@ -123,15 +123,10 @@ export class ContactDetailsPage extends AgencyFormPage {
         await endYear.click();
         await endYear.fill("2021");
 
-        await this.uploadFile({
-            fileComponentLabel: "Upload evidence",
-            file: {
-                name: "conditional-address-test-file.pdf",
-                mimeType: "application/pdf",
-                buffer: Buffer.from("E2E test content"),
-            },
-            isNewFileComponent: true,
-            isAssistedForms: isAssistedForms,
+        await this.uploadVisibleFile({
+            name: "conditional-address-test-file.pdf",
+            mimeType: "application/pdf",
+            buffer: Buffer.from("E2E test content"),
         });
 
         await this.saveDetailsButton.click();
