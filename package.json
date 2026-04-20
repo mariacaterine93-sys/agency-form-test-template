@@ -1,0 +1,11 @@
+{
+  "name": "agency-form-test-template",
+  "private": true,
+  "version": "1.0.0",
+  "workspaces": [
+    "e2e"
+  ],
+  "scripts": {
+    "test:e2e": "npm --prefix e2e test"
+  }
+}
