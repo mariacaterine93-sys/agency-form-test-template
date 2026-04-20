@@ -2,6 +2,7 @@ import { Locator, Page } from "@playwright/test";
 import { AgencyFormPage } from "./AgencyForm.page";
 
 export class ApplicantDetailsPage extends AgencyFormPage {
+    readonly applicantDetailsHeading: Locator;
     readonly permanentResidentRadioGroup: Locator;
     readonly firstNameField: Locator;
     readonly middleNameField: Locator;
@@ -13,8 +14,9 @@ export class ApplicantDetailsPage extends AgencyFormPage {
 
     constructor(page: Page) {
         super(page);
+        this.applicantDetailsHeading = page.getByRole("heading", { name: /applicant details/i }).first();
         this.permanentResidentRadioGroup = page.getByRole("radiogroup", {
-            name: "Is the person with a disability a permanent resident of Queensland?",
+            name: /is the person with a disability a permanent resident of queensland\?/i,
         });
         this.firstNameField = page.getByRole("textbox", { name: "First name" });
         this.middleNameField = page.getByRole("textbox", { name: "Middle name (optional)" });
@@ -29,9 +31,20 @@ export class ApplicantDetailsPage extends AgencyFormPage {
         });
     }
 
+    async waitForApplicantDetailsPage() {
+        await this.applicantDetailsHeading.waitFor({ state: "visible", timeout: 60_000 });
+    }
+
     async selectPermanentResident(isPermanentResident: boolean) {
         const label = isPermanentResident ? "Yes" : "No";
-        await this.permanentResidentRadioGroup.getByRole("radio", { name: label }).check();
+        const radioInGroup = this.permanentResidentRadioGroup.getByRole("radio", { name: label });
+
+        if (await radioInGroup.count()) {
+            await radioInGroup.check();
+            return;
+        }
+
+        await this.page.getByRole("radio", { name: label }).first().check();
     }
 
     async fillDateOfBirth(day: string, month: string, year: string) {

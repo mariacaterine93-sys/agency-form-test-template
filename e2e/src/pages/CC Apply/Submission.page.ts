@@ -1,9 +1,15 @@
-import { Page } from "@playwright/test";
+import { expect, Page } from "@playwright/test";
 import { AgencyFormPage } from "./AgencyForm.page";
 
 export class SubmissionPage extends AgencyFormPage {
     constructor(page: Page) {
         super(page);
+    }
+
+    async waitForSubmissionPage() {
+        await this.page.waitForLoadState("domcontentloaded").catch(() => {});
+        await this.page.waitForLoadState("networkidle").catch(() => {});
+        await expect(this.page.getByText(/submitted|application received|reference|thank you/i).first()).toBeVisible({ timeout: 30_000 });
     }
 
     async getGeneratedId(): Promise<string | undefined> {

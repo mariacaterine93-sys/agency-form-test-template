@@ -3,29 +3,42 @@ import { AgencyFormPage } from "./AgencyForm.page";
 
 export class BeforeYouStartPage extends AgencyFormPage {
     readonly beforeYouStartHeading: Locator;
+    readonly draftDialog: Locator;
     readonly startNewButton: Locator;
     readonly applyForNewCardRadio: Locator;
 
     constructor(page: Page) {
         super(page);
         this.beforeYouStartHeading = page.getByRole("heading", { name: /before you start/i });
+        this.draftDialog = page.getByRole("alertdialog", { name: /you have a draft form/i });
         this.startNewButton = page.getByRole("button", { name: "Start new" });
-        this.applyForNewCardRadio = page.getByRole("radio", { name: "Apply for a new card" });
+        this.applyForNewCardRadio = page.getByRole("radio", { name: /apply for a new card/i });
     }
 
     async startNewIfDraftExists() {
-        const hasDraft = await this.startNewButton.isVisible().catch(() => false);
+        const hasDraft = await this.draftDialog.waitFor({ state: "visible", timeout: 8000 }).then(() => true).catch(() => false);
+
         if (hasDraft) {
+            await this.startNewButton.waitFor({ state: "visible", timeout: 15000 });
             await this.startNewButton.click();
+            await this.draftDialog.waitFor({ state: "hidden", timeout: 15000 }).catch(() => {});
         }
     }
 
     async selectApplyForNewCard() {
-        if (await this.applyForNewCardRadio.count()) {
-            await this.applyForNewCardRadio.check();
-        } else {
-            await this.page.getByText("Apply for a new card").click();
+        await this.beforeYouStartHeading.waitFor({ state: "visible", timeout: 60000 });
+
+        const radioVisible = await this.applyForNewCardRadio.isVisible().catch(() => false);
+        if (radioVisible) {
+            await this.applyForNewCardRadio.check().catch(async () => {
+                await this.applyForNewCardRadio.click();
+            });
+            return;
         }
+
+        const applyText = this.page.getByText("Apply for a new card").first();
+        await applyText.waitFor({ state: "visible", timeout: 30000 });
+        await applyText.click();
     }
 
     async completeBeforeYouStart() {

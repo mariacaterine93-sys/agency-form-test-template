@@ -23,6 +23,10 @@ export class DeclarationPage extends AgencyFormPage {
         this.submitButton = page.getByRole("button", { name: "Submit" });
     }
 
+    async waitForDeclarationPage() {
+        await this.confirmFollowingHeading.waitFor({ state: "visible", timeout: 60_000 });
+    }
+
     async confirmDeclarations() {
         await this.agreeInformationCheckBox.check();
         await this.consentShareIdentityCheckBox.check();

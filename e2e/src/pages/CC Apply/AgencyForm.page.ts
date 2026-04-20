@@ -22,6 +22,7 @@ export class AgencyFormPage {
     readonly rememberConsentCheckBox: Locator;
     readonly consentButton: Locator;
     readonly saveAndContinueButton: Locator;
+    private loadingIssueDetected = false;
 
     constructor(page: Page) {
         this.page = page;
@@ -33,6 +34,18 @@ export class AgencyFormPage {
         this.rememberConsentCheckBox = page.getByLabel(/yes,?\s*remember my consent/i);
         this.consentButton = page.getByRole("button", { name: /^Consent$/i });
         this.saveAndContinueButton = page.getByRole("button", { name: "Save and continue" });
+
+        page.on("response", (response) => {
+            if (response.request().isNavigationRequest() && response.status() >= 400) {
+                this.loadingIssueDetected = true;
+            }
+        });
+
+        page.on("requestfailed", (request) => {
+            if (request.isNavigationRequest()) {
+                this.loadingIssueDetected = true;
+            }
+        });
     }
 
     async goToCompanionCardApply() {
@@ -69,18 +82,46 @@ export class AgencyFormPage {
         }
     }
 
-    async handleLoadingIfDisplayed() {
-        const loadingHeading = this.page.getByRole("heading", { name: /loading/i }).first();
-        const isVisible = await loadingHeading.isVisible().catch(() => false);
+    async navigateToAgencyFormIfNeeded() {
+        await this.page.waitForURL(/forms\.uat\.beta\.my\.qld\.gov\.au\/companioncardapply/i, { timeout: 90000 }).catch(() => {});
 
-        if (isVisible) {
-            await loadingHeading.waitFor({ state: "hidden", timeout: 15000 }).catch(() => {});
+        if (/companioncardapply\/redirect/i.test(this.page.url()) || /companioncardapply\/?$/i.test(this.page.url())) {
+            await this.page.goto("https://forms.uat.beta.my.qld.gov.au/companioncardapply/agency-form");
+        }
+    }
+
+    async ensureNoLoadingError() {
+        await this.page.waitForLoadState("domcontentloaded").catch(() => {});
+
+        const loadingHeading = this.page.getByRole("heading", { name: /loading/i }).first();
+        const showsLoading = await loadingHeading.isVisible().catch(() => false);
+        if (showsLoading) {
+            const loadingCleared = await loadingHeading
+                .waitFor({ state: "hidden", timeout: 15000 })
+                .then(() => true)
+                .catch(() => false);
+
+            if (!loadingCleared) {
+                console.log("Loading error");
+                throw new Error("Loading error");
+            }
+        }
+
+        const pageText = (await this.page.locator("body").innerText().catch(() => "")) ?? "";
+        const hasKnownLoadError =
+            this.loadingIssueDetected ||
+            /404/.test(this.page.url()) ||
+            /404|page not found|this page isn'?t working|service unavailable|too many redirects|unexpected error|bad gateway/i.test(pageText);
+
+        if (hasKnownLoadError) {
+            console.log("Loading error");
+            throw new Error("Loading error");
         }
     }
 
     async clickSaveAndContinue() {
         await this.saveAndContinueButton.click();
-        await this.handleLoadingIfDisplayed();
+        await this.ensureNoLoadingError();
     }
 
     async expectCurrentHeading(headingName: string | RegExp) {
