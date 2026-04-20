@@ -7,7 +7,7 @@
 4. Run the tests in headed or UI mode
 
 ## Test Execution with GitHub Workflow
-The YAML pipeline example is configured for a nightly run in `.github/workflows/nightly-run.yml`. The E2E test runs every midnight, and the result is published to the queue.
+The YAML pipeline example is configured for a nightly run in `.github/workflows/nightly-run.yml`. The E2E test runs every midnight, and results are uploaded as workflow artifacts.
 
 ### Write end to end tests
 We utilize Playwright with TypeScript and Object Models.
