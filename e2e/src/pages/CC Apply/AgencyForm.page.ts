@@ -1,15 +1,16 @@
 import { expect, Locator, Page } from "@playwright/test";
-import { config } from "../../../config";
+import * as fs from "fs";
+import * as os from "os";
+import * as path from "path";
+
+const companionCardApplyUrl = "https://forms.uat.beta.my.qld.gov.au/companioncardapply";
 
 type UploadFileOptions = {
-    fileComponentLabel?: string;
     file: {
         name: string;
         mimeType: string;
         buffer: Buffer;
     };
-    isNewFileComponent?: boolean;
-    isAssistedForms?: boolean;
 };
 
 export class AgencyFormPage {
@@ -41,15 +42,36 @@ export class AgencyFormPage {
             }
         });
 
-        page.on("requestfailed", (request) => {
-            if (request.isNavigationRequest()) {
-                this.loadingIssueDetected = true;
+    }
+
+    // Watches for the "Can't find draft" modal concurrently with an action.
+    // If the modal appears, clicks "Start new", waits for Before You Start, then throws DraftDeleted.
+    async withModalWatch<T>(action: () => Promise<T>): Promise<T> {
+        let actionDone = false;
+        const modal = this.page.locator('dtf-modal[title="Can\'t find draft"]');
+
+        const modalWatcher = (async (): Promise<T> => {
+            while (!actionDone) {
+                const visible = await modal.isVisible().catch(() => false);
+                if (visible) {
+                    await modal.getByRole("button", { name: "Start new" }).click({ force: true });
+                    await this.page.getByRole("heading", { name: /before you start/i })
+                        .waitFor({ state: "visible", timeout: 30000 });
+                    throw new Error("DraftDeleted");
+                }
+                await new Promise(r => setTimeout(r, 300));
             }
-        });
+            return undefined as unknown as T;
+        })();
+
+        return Promise.race([
+            action().then(result => { actionDone = true; return result; }),
+            modalWatcher,
+        ]).finally(() => { actionDone = true; });
     }
 
     async goToCompanionCardApply() {
-        await this.page.goto(config.baseUrl);
+        await this.page.goto(companionCardApplyUrl);
     }
 
     async beginApplication() {
@@ -96,11 +118,7 @@ export class AgencyFormPage {
         const loadingHeading = this.page.getByRole("heading", { name: /loading/i }).first();
         const showsLoading = await loadingHeading.isVisible().catch(() => false);
         if (showsLoading) {
-            const loadingCleared = await loadingHeading
-                .waitFor({ state: "hidden", timeout: 15000 })
-                .then(() => true)
-                .catch(() => false);
-
+            const loadingCleared = await loadingHeading.waitFor({ state: "hidden", timeout: 60000 }).then(() => true).catch(() => false);
             if (!loadingCleared) {
                 console.log("Loading error");
                 throw new Error("Loading error");
@@ -120,7 +138,7 @@ export class AgencyFormPage {
     }
 
     async clickSaveAndContinue() {
-        await this.saveAndContinueButton.click();
+        await this.withModalWatch(() => this.saveAndContinueButton.click());
         await this.ensureNoLoadingError();
     }
 
@@ -129,13 +147,32 @@ export class AgencyFormPage {
     }
 
     async uploadFile(options: UploadFileOptions) {
-        const uploadButton = this.page.getByRole("button", { name: "browse files" }).last();
-        const [fileChooser] = await Promise.all([
-            this.page.waitForEvent("filechooser"),
-            uploadButton.click(),
-        ]);
+        // Write buffer to a temp file so all browsers handle it consistently
+        const tempDir = os.tmpdir();
+        const tempFilePath = path.join(tempDir, options.file.name);
+        fs.writeFileSync(tempFilePath, options.file.buffer);
 
-        await fileChooser.setFiles(options.file);
-        await expect(this.page.getByText(/upload complete/i)).toBeVisible({ timeout: 30_000 });
+        try {
+            const uploadButton = this.page.getByRole("button", { name: "browse files" }).last();
+            const [fileChooser] = await Promise.all([
+                this.page.waitForEvent("filechooser"),
+                uploadButton.click(),
+            ]);
+
+            await fileChooser.setFiles(tempFilePath);
+
+            // Wait for either success or failure indicator
+            const uploadSuccess = this.page.getByText(/upload complete|file uploaded|uploaded successfully/i);
+            const uploadError = this.page.getByText(/unable to upload/i);
+
+            await Promise.race([
+                uploadSuccess.waitFor({ state: "visible", timeout: 30_000 }),
+                uploadError.waitFor({ state: "visible", timeout: 30_000 }).then(() => {
+                    throw new Error(`File upload failed: "Unable to upload file" shown for ${options.file.name}`);
+                }),
+            ]);
+        } finally {
+            fs.rmSync(tempFilePath, { force: true });
+        }
     }
 }

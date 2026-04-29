@@ -84,49 +84,50 @@ export class ContactDetailsPage extends AgencyFormPage {
 
     async chooseMyselfAsApplicant() {
         if (await this.applicantTypeMyselfOption.count()) {
-            await this.applicantTypeMyselfOption.scrollIntoViewIfNeeded().catch(() => {});
-            await this.applicantTypeMyselfOption.check().catch(async () => {
-                await this.applicantTypeMyselfOption.click();
-            });
+            await this.withModalWatch(() =>
+                this.applicantTypeMyselfOption.check({ force: true }).catch(() =>
+                    this.applicantTypeMyselfOption.click({ force: true })
+                )
+            );
         }
     }
 
     async chooseEmailContactPreference() {
-        const emailRadioFirst = this.page.getByRole("radio", { name: /^email$/i }).first();
-        const emailRadioLast = this.page.getByRole("radio", { name: /^email$/i }).last();
+        // Wait for the page to settle after applicant type selection (fields load dynamically)
+        await this.page.waitForLoadState("networkidle").catch(() => {});
 
-        for (const radio of [emailRadioFirst, emailRadioLast]) {
+        // Wait up to 10s for the "Which method would you like → Email" option to appear
+        await this.howToContactEmailOption.waitFor({ state: "visible", timeout: 10000 }).catch(() => {});
+
+        if (await this.howToContactEmailOption.isVisible().catch(() => false)) {
+            await this.withModalWatch(() => this.howToContactEmailOption.click({ force: true }));
+            return;
+        }
+
+        // Try email radio buttons by role (first or last)
+        for (const radio of [
+            this.page.getByRole("radio", { name: /^email$/i }).first(),
+            this.page.getByRole("radio", { name: /^email$/i }).last(),
+        ]) {
             if (await radio.count()) {
                 await radio.scrollIntoViewIfNeeded().catch(() => {});
-                await radio.check({ force: true }).catch(async () => {
-                    await radio.click({ force: true });
-                });
-
-                if (await radio.isChecked().catch(() => false)) {
-                    return;
-                }
+                const checked = await this.withModalWatch(() =>
+                    radio.check({ force: true })
+                        .then(() => radio.isChecked())
+                        .catch(() => false)
+                );
+                if (checked) return;
             }
         }
 
-        await this.page.getByText("Email", { exact: true }).last().click({ force: true });
+        // Last resort — click the last visible "Email" text on the page
+        await this.withModalWatch(() =>
+            this.page.getByText("Email", { exact: true }).last().click({ force: true })
+        );
     }
 
     async completeMyIdContactDetails() {
         await this.chooseMyselfAsApplicant();
         await this.chooseEmailContactPreference();
     }
-
-    async fillInContactDetailsForm(emailAddress: string, isAssistedForms?: boolean) {
-        await this.fillEmailAddress(emailAddress);
-        await this.fillMobilePhoneNumber("0123456789");
-
-        if (isAssistedForms) {
-            await this.fillHomeAddress(this.homeAddress);
-        }
-
-        await this.checkPostAddress(true);
-        await this.checkOtherAddress(false);
-        await this.selectAndFillEmailHowToContact(emailAddress);
-    }
 }
-

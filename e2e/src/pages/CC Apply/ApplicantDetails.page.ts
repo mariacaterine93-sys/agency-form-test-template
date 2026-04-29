@@ -4,12 +4,7 @@ import { AgencyFormPage } from "./AgencyForm.page";
 export class ApplicantDetailsPage extends AgencyFormPage {
     readonly applicantDetailsHeading: Locator;
     readonly permanentResidentRadioGroup: Locator;
-    readonly firstNameField: Locator;
-    readonly middleNameField: Locator;
-    readonly lastNameField: Locator;
     readonly dobGroup: Locator;
-    readonly residentialAddressField: Locator;
-    readonly sendCardToDifferentAddressCheckBox: Locator;
     readonly applicantPhotoVerificationCheckBox: Locator;
 
     constructor(page: Page) {
@@ -18,14 +13,7 @@ export class ApplicantDetailsPage extends AgencyFormPage {
         this.permanentResidentRadioGroup = page.getByRole("radiogroup", {
             name: /is the person with a disability a permanent resident of queensland\?/i,
         });
-        this.firstNameField = page.getByRole("textbox", { name: "First name" });
-        this.middleNameField = page.getByRole("textbox", { name: "Middle name (optional)" });
-        this.lastNameField = page.getByRole("textbox", { name: "Last name" });
         this.dobGroup = page.getByRole("group", { name: "Date of birth" });
-        this.residentialAddressField = page.getByRole("combobox", { name: "Residential address" });
-        this.sendCardToDifferentAddressCheckBox = page.getByRole("checkbox", {
-            name: "Send my Companion Card to a different address",
-        });
         this.applicantPhotoVerificationCheckBox = page.getByRole("checkbox", {
             name: /uploaded photo has been sighted and verified by my health professional/i,
         });
@@ -40,11 +28,11 @@ export class ApplicantDetailsPage extends AgencyFormPage {
         const radioInGroup = this.permanentResidentRadioGroup.getByRole("radio", { name: label });
 
         if (await radioInGroup.count()) {
-            await radioInGroup.check();
+            await this.withModalWatch(() => radioInGroup.check());
             return;
         }
 
-        await this.page.getByRole("radio", { name: label }).first().check();
+        await this.withModalWatch(() => this.page.getByRole("radio", { name: label }).first().check());
     }
 
     async fillDateOfBirth(day: string, month: string, year: string) {
@@ -58,6 +46,6 @@ export class ApplicantDetailsPage extends AgencyFormPage {
     }
 
     async verifyApplicantPhoto() {
-        await this.applicantPhotoVerificationCheckBox.check();
+        await this.withModalWatch(() => this.applicantPhotoVerificationCheckBox.check({ force: true }));
     }
 }

@@ -3,7 +3,6 @@ import { AgencyFormPage } from "./AgencyForm.page";
 
 export class DisabilityDetailsPage extends AgencyFormPage {
     readonly diagnosisTextArea: Locator;
-    readonly otherDiagnosisTextArea: Locator;
     readonly diagnosisDateGroup: Locator;
     readonly helpGettingAroundGroup: Locator;
     readonly helpWithCommunicationGroup: Locator;
@@ -13,7 +12,6 @@ export class DisabilityDetailsPage extends AgencyFormPage {
     constructor(page: Page) {
         super(page);
         this.diagnosisTextArea = page.locator("textarea").first();
-        this.otherDiagnosisTextArea = page.locator("textarea").nth(1);
         this.diagnosisDateGroup = page.getByRole("group", { name: /estimated date of diagnosis|date of diagnosis/i });
         this.helpGettingAroundGroup = page.getByLabel("Do you need help getting");
         this.helpWithCommunicationGroup = page.getByRole("radiogroup", { name: "Do you need help with communication?" });

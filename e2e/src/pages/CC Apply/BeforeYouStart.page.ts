@@ -27,6 +27,9 @@ export class BeforeYouStartPage extends AgencyFormPage {
 
     async selectApplyForNewCard() {
         await this.beforeYouStartHeading.waitFor({ state: "visible", timeout: 60000 });
+        
+        // Wait for the form options to load
+        await this.page.waitForLoadState("networkidle").catch(() => {});
 
         const radioVisible = await this.applyForNewCardRadio.isVisible().catch(() => false);
         if (radioVisible) {
@@ -36,6 +39,7 @@ export class BeforeYouStartPage extends AgencyFormPage {
             return;
         }
 
+        // Wait for text with exact match and case-insensitive
         const applyText = this.page.getByText("Apply for a new card").first();
         await applyText.waitFor({ state: "visible", timeout: 30000 });
         await applyText.click();
