@@ -1,43 +1,25 @@
 import { test as setup, expect } from '@playwright/test';
 import { AgencyFormPage } from '../pages/CC Apply/AgencyForm.page';
-import * as fs from 'fs';
+import { getMappedMyIdEmail } from './test-data/centralizedTestData';
 
-const authFile = 'playwright/.auth/user.json';
 setup.setTimeout(600000);
 
 setup('authenticate and save storage state', async ({ page }) => {
   const agencyFormPage = new AgencyFormPage(page);
-  const email = process.env.E2E_TEST_USER_EMAIL || 'IndustryRDTI27@test.gov.au';
-  const agencyFormUrl = `${process.env.DTP_ROOT_URL || 'https://forms.preprod.beta.my.qld.gov.au'}/companioncardapply/agency-form`;
-  const bysHeading = page.getByRole('heading', { name: /before you start|what are you trying to do\?/i }).first();
+  const targetSpecFromEnv = process.env.E2E_AUTH_TARGET_SPEC;
+  const targetSpecFromCliArg = process.argv.find((arg) => /\.spec\.ts$/i.test(arg));
+  const targetSpec = (targetSpecFromEnv || targetSpecFromCliArg)?.split(/[\\/]/).pop();
+  const mappedEmail = targetSpec ? getMappedMyIdEmail(targetSpec) : undefined;
+  const email =
+    process.env.E2E_MYID_EMAIL ||
+    process.env.E2E_TEST_USER_EMAIL ||
+    process.env.E2E_AUTH_SETUP_EMAIL ||
+    mappedEmail;
 
-  // If a stored session already exists, try reusing it first.
-  if (fs.existsSync(authFile)) {
-    const browser = page.context().browser();
-    if (browser) {
-      const existingSessionContext = await browser.newContext({ storageState: authFile });
-      const existingSessionPage = await existingSessionContext.newPage();
-
-      try {
-        await existingSessionPage.goto(agencyFormUrl, { waitUntil: 'networkidle' });
-        const existingSessionBysHeading = existingSessionPage
-          .getByRole('heading', { name: /before you start|what are you trying to do\?/i })
-          .first();
-        const sessionStillValid = await existingSessionBysHeading.isVisible({ timeout: 8000 }).catch(() => false);
-
-        if (sessionStillValid) {
-          console.log('Existing session is still valid. Re-saving storage state.');
-          await existingSessionContext.storageState({ path: authFile });
-          await existingSessionContext.close();
-          return;
-        }
-      } finally {
-        await existingSessionContext.close().catch(() => {});
-      }
-    }
-
-    console.log('Session expired. Running full login flow...');
+  if (!email) {
+    throw new Error('No myID email is configured. Set E2E_MYID_EMAIL or run with a mapped spec file.');
   }
+  const bysHeading = page.getByRole('heading', { name: /before you start|what are you trying to do\?/i }).first();
 
   // Full login flow.
   await agencyFormPage.goToCompanionCardApply();
@@ -55,5 +37,4 @@ setup('authenticate and save storage state', async ({ page }) => {
   }
 
   await expect(bysHeading).toBeVisible({ timeout: 480000 });
-  await page.context().storageState({ path: authFile });
 });

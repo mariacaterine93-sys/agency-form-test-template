@@ -47,8 +47,25 @@ const emailBySpecFile: Record<string, string> = {
   'ReviewMyself2Contacts.spec.ts': 'IndustryRDTI28@test.gov.au',
 };
 
+export const getMappedMyIdEmail = (specFileName: string): string | undefined => {
+  return emailBySpecFile[specFileName];
+};
+
+export const getDefaultMyIdEmail = (specFileName: string): string => {
+  const mappedEmail = getMappedMyIdEmail(specFileName);
+  if (mappedEmail) {
+    return mappedEmail;
+  }
+
+  throw new Error(`No centralized myID email is mapped for spec: ${specFileName}`);
+};
+
 export const getMyIdEmail = (specFileName: string): string => {
-  const mappedEmail = emailBySpecFile[specFileName];
+  if (process.env.E2E_MYID_EMAIL) {
+    return process.env.E2E_MYID_EMAIL;
+  }
+
+  const mappedEmail = getMappedMyIdEmail(specFileName);
   if (mappedEmail) {
     return mappedEmail;
   }
