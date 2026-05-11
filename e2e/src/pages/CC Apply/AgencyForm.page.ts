@@ -3,7 +3,10 @@ import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
 
-const companionCardApplyUrl = "https://forms.uat.beta.my.qld.gov.au/companioncardapply";
+// Import environment configuration from .env file
+const companionCardApplyUrl = process.env.DTP_ROOT_URL 
+  ? `${process.env.DTP_ROOT_URL}/companioncardapply`
+  : "https://forms.preprod.beta.my.qld.gov.au/companioncardapply";
 
 type UploadFileOptions = {
     file: {
@@ -24,6 +27,7 @@ export class AgencyFormPage {
     readonly consentButton: Locator;
     readonly saveAndContinueButton: Locator;
     private loadingIssueDetected = false;
+    private lastMyIdEmail = "";
 
     constructor(page: Page) {
         this.page = page;
@@ -75,41 +79,119 @@ export class AgencyFormPage {
     }
 
     async beginApplication() {
+        await this.beginButton.waitFor({ state: "visible", timeout: 15000 });
         await this.beginButton.click();
     }
 
     async continueWithMyId() {
+        await this.continueWithMyIdButton.waitFor({ state: "visible", timeout: 15000 });
         await this.continueWithMyIdButton.click();
     }
 
     async selectMyId() {
+        await this.selectMyIdButton.waitFor({ state: "visible", timeout: 15000 });
         await this.selectMyIdButton.click();
     }
 
     async enterMyIdEmail(emailAddress: string) {
+        this.lastMyIdEmail = emailAddress;
+        await this.myIdEmailTextBox.waitFor({ state: "visible", timeout: 30000 });
         await this.myIdEmailTextBox.fill(emailAddress);
     }
 
     async consentIfRequired() {
-        if (await this.getCodeButton.count()) {
+        const hasGetCodeButton = await this.getCodeButton.isVisible({ timeout: 10000 }).catch(() => false);
+        if (hasGetCodeButton) {
             await this.getCodeButton.click();
         }
 
-        if (await this.rememberConsentCheckBox.count()) {
+        const hasRememberConsent = await this.rememberConsentCheckBox.isVisible({ timeout: 10000 }).catch(() => false);
+        if (hasRememberConsent) {
             await this.rememberConsentCheckBox.check();
         }
 
-        if (await this.consentButton.count()) {
-            await this.consentButton.click();
+        const hasConsentButton = await this.consentButton.isVisible({ timeout: 20000 }).catch(() => false);
+        if (hasConsentButton) {
+            await Promise.all([
+                this.page.waitForURL(/companioncardapply/i, { timeout: 90000 }).catch(() => {}),
+                this.consentButton.click(),
+            ]);
         }
     }
 
     async navigateToAgencyFormIfNeeded() {
-        await this.page.waitForURL(/forms\.uat\.beta\.my\.qld\.gov\.au\/companioncardapply/i, { timeout: 90000 }).catch(() => {});
+        await this.page.waitForLoadState("domcontentloaded").catch(() => {});
 
-        if (/companioncardapply\/redirect/i.test(this.page.url()) || /companioncardapply\/?$/i.test(this.page.url())) {
-            await this.page.goto("https://forms.uat.beta.my.qld.gov.au/companioncardapply/agency-form");
+        for (let attempt = 0; attempt < 5; attempt++) {
+            const currentUrl = this.page.url();
+            const isOnAgencyForm = /companioncardapply\/agency-form/i.test(currentUrl);
+            const bysHeadingVisible = await this.page
+                .getByRole("heading", { name: /before you start|what are you trying to do\?/i })
+                .first()
+                .isVisible({ timeout: 3000 })
+                .catch(() => false);
+
+            if (isOnAgencyForm && bysHeadingVisible) {
+                return;
+            }
+
+            await this.resumeMyIdFlowIfVisible();
+
+            const postResumeUrl = this.page.url();
+            if (/companioncardapply\/agency-form/i.test(postResumeUrl)) {
+                const postResumeBysHeadingVisible = await this.page
+                    .getByRole("heading", { name: /before you start|what are you trying to do\?/i })
+                    .first()
+                    .isVisible({ timeout: 5000 })
+                    .catch(() => false);
+                if (postResumeBysHeadingVisible) {
+                    return;
+                }
+            }
+
+            const agencyFormUrl = process.env.DTP_ROOT_URL
+              ? `${process.env.DTP_ROOT_URL}/companioncardapply/agency-form`
+              : "https://forms.preprod.beta.my.qld.gov.au/companioncardapply/agency-form";
+            await this.page.goto(agencyFormUrl);
+            await this.page.waitForLoadState("domcontentloaded").catch(() => {});
+
+            await this.resumeMyIdFlowIfVisible();
+
+            const reachedBysHeading = await this.page
+                .getByRole("heading", { name: /before you start|what are you trying to do\?/i })
+                .first()
+                .isVisible({ timeout: 7000 })
+                .catch(() => false);
+            if (reachedBysHeading) {
+                return;
+            }
         }
+
+        throw new Error("Unable to reach Before You Start page after authentication retries.");
+    }
+
+    private async resumeMyIdFlowIfVisible() {
+        const loginHeading = this.page.getByRole("heading", { name: /login to continue/i });
+        const loginToContinueVisible = await loginHeading.isVisible({ timeout: 5000 }).catch(() => false);
+
+        if (loginToContinueVisible) {
+            const continueWithMyIdVisible = await this.continueWithMyIdButton.isVisible({ timeout: 5000 }).catch(() => false);
+            if (continueWithMyIdVisible) {
+                await this.continueWithMyIdButton.click();
+            }
+        }
+
+        const selectMyIdVisible = await this.selectMyIdButton.isVisible({ timeout: 5000 }).catch(() => false);
+        if (selectMyIdVisible) {
+            await this.selectMyIdButton.click();
+        }
+
+        const emailVisible = await this.myIdEmailTextBox.isVisible({ timeout: 15000 }).catch(() => false);
+        if (emailVisible && this.lastMyIdEmail) {
+            await this.myIdEmailTextBox.fill(this.lastMyIdEmail);
+        }
+
+        await this.consentIfRequired();
     }
 
     async ensureNoLoadingError() {
