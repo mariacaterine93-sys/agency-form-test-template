@@ -7,8 +7,8 @@ setup.setTimeout(600000);
 
 setup('authenticate and save storage state', async ({ page }) => {
   const agencyFormPage = new AgencyFormPage(page);
-  const email = 'IndustryRDTI27@test.gov.au';
-  const agencyFormUrl = 'https://forms.preprod.beta.my.qld.gov.au/companioncardapply/agency-form';
+  const email = process.env.E2E_TEST_USER_EMAIL || 'IndustryRDTI27@test.gov.au';
+  const agencyFormUrl = `${process.env.DTP_ROOT_URL || 'https://forms.preprod.beta.my.qld.gov.au'}/companioncardapply/agency-form`;
   const bysHeading = page.getByRole('heading', { name: /before you start|what are you trying to do\?/i }).first();
 
   // If a stored session already exists, try reusing it first.

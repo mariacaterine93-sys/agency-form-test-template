@@ -48,7 +48,16 @@ const emailBySpecFile: Record<string, string> = {
 };
 
 export const getMyIdEmail = (specFileName: string): string => {
-  return emailBySpecFile[specFileName] || process.env.E2E_TEST_USER_EMAIL || 'IndustryRDTI27@test.gov.au';
+  const mappedEmail = emailBySpecFile[specFileName];
+  if (mappedEmail) {
+    return mappedEmail;
+  }
+
+  if (process.env.E2E_TEST_USER_EMAIL) {
+    return process.env.E2E_TEST_USER_EMAIL;
+  }
+
+  throw new Error(`No mapped myID email for spec: ${specFileName}`);
 };
 
 export const getMyIdUser = (specFileName: string): CentralizedTestUser | undefined => {
