@@ -35,7 +35,7 @@ loadEnvFile(path.resolve(process.cwd(), '.env'));
  * See https://playwright.dev/docs/test-configuration.
  */
 export default defineConfig({
-  testDir: './tests',
+  testDir: './src/tests',
   outputDir: 'test-results',
   preserveOutput: 'always',
   /* Run tests in files in parallel */
