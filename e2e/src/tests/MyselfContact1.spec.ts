@@ -118,7 +118,7 @@ test('Myself Contact1', async ({ page }, testInfo) => {
     await handleDraftFailedModal();
   };
 
-  // Stable auth entry: rely on saved storage state, no in-test login flow.
+  // Stable auth entry: use env/mapped myID email and recover login inline when needed.
   await page.goto(agencyFormUrl, { waitUntil: 'domcontentloaded' });
   await agencyFormPage.ensureNoLoadingError();
   await handleDraftFailedModal();
@@ -131,7 +131,7 @@ test('Myself Contact1', async ({ page }, testInfo) => {
   const bysVisible = await bysHeading.isVisible({ timeout: 20000 }).catch(() => false);
   if (!bysVisible) {
     throw new Error(
-      'Auth session is not valid for MyselfContact1. Run auth setup first: npx playwright test tests/auth.setup.ts --project=setup --headed'
+      'Auth session is not valid for MyselfContact1. Ensure E2E_MYID_EMAIL (or mapped test-data email) is configured and rerun this spec.'
     );
   }
 
