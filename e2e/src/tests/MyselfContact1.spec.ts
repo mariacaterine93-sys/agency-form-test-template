@@ -56,6 +56,13 @@ const fillContactForm = async (
 test('Myself Contact1', async ({ page }, testInfo) => {
   test.setTimeout(240000);
 
+  if (!environment.TEST_RUNNER_CLIENT_ID || !environment.TEST_RUNNER_CLIENT_SECRET) {
+    throw new Error('Missing test runner credentials. Set E2E_TEST_RUNNER_CLIENT_ID and E2E_TEST_RUNNER_CLIENT_SECRET in .env.');
+  }
+  if (!environment.SUBSCRIBER_CLIENT_ID || !environment.SUBSCRIBER_CLIENT_SECRET) {
+    throw new Error('Missing subscriber credentials. Set E2E_SUBSCRIBER_CLIENT_ID and E2E_SUBSCRIBER_CLIENT_SECRET in .env.');
+  }
+
   const agencyFormPage = new AgencyFormPage(page);
   const beforeYouStartPage = new BeforeYouStartPage(page);
   const bysHeading = page.getByRole('heading', { name: /before you start|what are you trying to do\?/i }).first();
@@ -118,22 +125,50 @@ test('Myself Contact1', async ({ page }, testInfo) => {
     await handleDraftFailedModal();
   };
 
+  const ensureBysWithFreshMyIdLogin = async () => {
+    await page.goto(agencyFormUrl, { waitUntil: 'domcontentloaded' });
+    await agencyFormPage.ensureNoLoadingError();
+    await handleDraftFailedModal();
+
+    await recoverAuthIfNeeded();
+    await handleDraftFailedModal();
+
+    const bysAfterRecovery = await bysHeading.isVisible({ timeout: 8000 }).catch(() => false);
+    if (bysAfterRecovery) {
+      return;
+    }
+
+    // Full login path: do not rely on any saved auth state.
+    await agencyFormPage.goToCompanionCardApply();
+    await agencyFormPage.ensureNoLoadingError();
+
+    if (await agencyFormPage.beginButton.isVisible({ timeout: 10000 }).catch(() => false)) {
+      await agencyFormPage.beginApplication();
+    }
+    if (await agencyFormPage.continueWithMyIdButton.isVisible({ timeout: 10000 }).catch(() => false)) {
+      await agencyFormPage.continueWithMyId();
+    }
+    if (await agencyFormPage.selectMyIdButton.isVisible({ timeout: 10000 }).catch(() => false)) {
+      await agencyFormPage.selectMyId();
+    }
+    if (await agencyFormPage.myIdEmailTextBox.isVisible({ timeout: 15000 }).catch(() => false)) {
+      await agencyFormPage.enterMyIdEmail(myIdEmail);
+    }
+
+    await agencyFormPage.consentIfRequired();
+    await agencyFormPage.navigateToAgencyFormIfNeeded().catch(() => {});
+    await handleDraftFailedModal();
+
+    const bysVisible = await bysHeading.isVisible({ timeout: 20000 }).catch(() => false);
+    if (!bysVisible) {
+      throw new Error('Auth session is not valid for MyselfContact1 after full login flow. Ensure E2E_MYID_EMAIL (or mapped test-data email) is configured and rerun this spec.');
+    }
+  };
+
   // Stable auth entry: use env/mapped myID email and recover login inline when needed.
-  await page.goto(agencyFormUrl, { waitUntil: 'domcontentloaded' });
-  await agencyFormPage.ensureNoLoadingError();
-  await handleDraftFailedModal();
-
-  await recoverAuthIfNeeded();
-  await handleDraftFailedModal();
-
+  await ensureBysWithFreshMyIdLogin();
   await beforeYouStartPage.startNewIfDraftExists();
   await handleDraftFailedModal();
-  const bysVisible = await bysHeading.isVisible({ timeout: 20000 }).catch(() => false);
-  if (!bysVisible) {
-    throw new Error(
-      'Auth session is not valid for MyselfContact1. Ensure E2E_MYID_EMAIL (or mapped test-data email) is configured and rerun this spec.'
-    );
-  }
 
   // BYS: Apply for a new Card -> Save & Continue
   await goFromBysToContactDetails();
