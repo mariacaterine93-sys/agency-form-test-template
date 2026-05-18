@@ -1,8 +1,8 @@
 import { test, expect, Locator, Page } from '@playwright/test';
-import { AgencyFormPage } from '../pages/CC Apply/AgencyForm.page';
-import { BeforeYouStartPage } from '../pages/CC Apply/BeforeYouStart.page';
-import { getMyIdEmail } from './test-data/centralizedTestData';
-import { environment } from './config/environment';
+import { AgencyFormPage } from '../../../pages/CC Apply/AgencyForm.page';
+import { BeforeYouStartPage } from '../../../pages/CC Apply/BeforeYouStart.page';
+import { getLoginIdentityForSpec } from '../../test-data/centralizedTestData';
+import { environment } from '../../config/environment';
 
 const fillRequiredContactDetails = async (page: Page) => {
   await page.getByRole('textbox', { name: /^First name\b/i }).first().fill('Tom');
@@ -128,8 +128,8 @@ test('Myself Applicant', async ({ page }) => {
   const contactDetailsHeading = page.getByRole('heading', { name: /contact details/i }).first();
   const applicantDetailsHeading = page.getByRole('heading', { name: /applicant details/i }).first();
   const disabilityDetailsHeading = page.getByRole('heading', { name: /disability details/i }).first();
-
-  const myIdEmail = getMyIdEmail('MyselfApplicant.spec.ts');
+  const loginIdentity = getLoginIdentityForSpec('MyselfApplicant.spec.ts');
+  const loginEmail = loginIdentity.email;
   const agencyFormUrl = `${process.env.DTP_ROOT_URL || 'https://forms.preprod.beta.my.qld.gov.au'}/companioncardapply/agency-form`;
   const uploadPngPath = 'C:/PlaywrightTS/repo-doc-images/image1.png';
 
@@ -149,16 +149,7 @@ test('Myself Applicant', async ({ page }) => {
     const loginVisible = await loginHeading.isVisible({ timeout: 1500 }).catch(() => false);
     if (!loginVisible) return;
 
-    if (await agencyFormPage.continueWithMyIdButton.isVisible({ timeout: 5000 }).catch(() => false)) {
-      await agencyFormPage.continueWithMyId();
-    }
-    if (await agencyFormPage.selectMyIdButton.isVisible({ timeout: 5000 }).catch(() => false)) {
-      await agencyFormPage.selectMyId();
-    }
-    if (await agencyFormPage.myIdEmailTextBox.isVisible({ timeout: 10000 }).catch(() => false)) {
-      await agencyFormPage.enterMyIdEmail(myIdEmail);
-    }
-    await agencyFormPage.consentIfRequired();
+    await agencyFormPage.loginWithIdentity(loginIdentity.provider, loginEmail);
   };
 
   // NOTE: Avoid global draft-modal handlers because they can trigger during navigation
@@ -171,6 +162,26 @@ test('Myself Applicant', async ({ page }) => {
     }
   );
 
+  const waitForBysOrDraft = async (timeoutMs: number): Promise<boolean> => {
+    const deadline = Date.now() + timeoutMs;
+
+    while (Date.now() < deadline) {
+      const bysVisible = await bysHeading.isVisible({ timeout: 2000 }).catch(() => false);
+      if (bysVisible) {
+        return true;
+      }
+
+      const draftVisible = await beforeYouStartPage.draftDialog.isVisible().catch(() => false);
+      if (draftVisible) {
+        return true;
+      }
+
+      await page.waitForTimeout(1000);
+    }
+
+    return false;
+  };
+
   const recoverAuthIfNeeded = async (): Promise<boolean> => {
     const loginHeading = page.getByRole('heading', { name: /login to continue/i });
     const loginVisible = await loginHeading.isVisible({ timeout: 5000 }).catch(() => false);
@@ -178,30 +189,22 @@ test('Myself Applicant', async ({ page }) => {
       return false;
     }
 
-    if (await agencyFormPage.continueWithMyIdButton.isVisible({ timeout: 8000 }).catch(() => false)) {
-      await agencyFormPage.continueWithMyId();
-    }
-
-    if (await agencyFormPage.selectMyIdButton.isVisible({ timeout: 8000 }).catch(() => false)) {
-      await agencyFormPage.selectMyId();
-    }
-
-    if (await agencyFormPage.myIdEmailTextBox.isVisible({ timeout: 12000 }).catch(() => false)) {
-      await agencyFormPage.enterMyIdEmail(myIdEmail);
-    }
-
-    await agencyFormPage.consentIfRequired();
+    await agencyFormPage.loginWithIdentity(loginIdentity.provider, loginEmail);
 
     try {
-      await agencyFormPage.navigateToAgencyFormIfNeeded();
-      await agencyFormPage.ensureNoLoadingError();
-      return true;
+      await agencyFormPage.ensureNoLoadingError().catch(() => {});
+      const reachedBysAfterLogin = await waitForBysOrDraft(180000);
+      if (reachedBysAfterLogin) {
+        return true;
+      }
+
+      await page.goto(agencyFormUrl, { waitUntil: 'domcontentloaded' }).catch(() => {});
+      await agencyFormPage.ensureNoLoadingError().catch(() => {});
+      return await waitForBysOrDraft(15000);
     } catch {
       await page.goto(agencyFormUrl, { waitUntil: 'domcontentloaded' }).catch(() => {});
       await agencyFormPage.ensureNoLoadingError().catch(() => {});
-      const bysNowVisible = await bysHeading.isVisible({ timeout: 10000 }).catch(() => false);
-      const draftNowVisible = await beforeYouStartPage.draftDialog.isVisible().catch(() => false);
-      return bysNowVisible || draftNowVisible;
+      return await waitForBysOrDraft(15000);
     }
   };
 
@@ -214,23 +217,47 @@ test('Myself Applicant', async ({ page }) => {
     await handleDraftFailedModal();
   };
 
-  // Auth + BYS
-  await page.goto(agencyFormUrl, { waitUntil: 'domcontentloaded' });
-  await agencyFormPage.ensureNoLoadingError();
-  await handleDraftFailedModal();
+  const ensureBysWithFreshMyIdLogin = async () => {
+    await page.goto(agencyFormUrl, { waitUntil: 'domcontentloaded' });
+    await agencyFormPage.ensureNoLoadingError();
+    await handleDraftFailedModal();
 
-  await recoverAuthIfNeeded();
-  await handleDraftFailedModal();
+    const alreadyAtBys = await waitForBysOrDraft(8000);
+    if (alreadyAtBys) {
+      return;
+    }
 
+    const recovered = await recoverAuthIfNeeded();
+    await handleDraftFailedModal();
+
+    if (recovered) {
+      const bysAfterRecovery = await waitForBysOrDraft(30000);
+      if (bysAfterRecovery) {
+        return;
+      }
+
+      throw new Error(
+        `Identity login completed but app did not return to Before You Start. Current URL: ${page.url()}.`
+      );
+    }
+
+    // Full login path: do not rely on any saved auth state.
+    await agencyFormPage.loginWithIdentity(loginIdentity.provider, loginEmail, { navigateFromEntry: true });
+    await handleDraftFailedModal();
+
+    const bysVisible = await waitForBysOrDraft(180000);
+    if (!bysVisible) {
+      throw new Error(
+        `Auth session is not valid for Myself Applicant after full ${loginIdentity.provider} login flow. ` +
+        `Timed out waiting for Before You Start after identity login. Current URL: ${page.url()}.`
+      );
+    }
+  };
+
+  // Stable auth entry: use env/mapped myID email and recover login inline when needed.
+  await ensureBysWithFreshMyIdLogin();
   await beforeYouStartPage.startNewIfDraftExists();
   await handleDraftFailedModal();
-
-  const bysVisible = await bysHeading.isVisible({ timeout: 20000 }).catch(() => false);
-  if (!bysVisible) {
-    throw new Error(
-      'Auth session is not valid for MyselfApplicant. Run auth setup first: npx playwright test tests/auth.setup.ts --project=setup --headed'
-    );
-  }
 
   // Reach Contact details
   await goFromBysToContactDetails();
@@ -366,5 +393,6 @@ test('Myself Applicant', async ({ page }) => {
 
   console.log('✅ Test Pass - Disability details screen is displayed');
 });
+
 
 

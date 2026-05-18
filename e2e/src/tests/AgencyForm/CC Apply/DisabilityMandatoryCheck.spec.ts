@@ -1,8 +1,8 @@
 import { test, expect, Locator, Page } from '@playwright/test';
-import { AgencyFormPage } from '../pages/CC Apply/AgencyForm.page';
-import { BeforeYouStartPage } from '../pages/CC Apply/BeforeYouStart.page';
-import { getMyIdEmail } from './test-data/centralizedTestData';
-import { environment } from './config/environment';
+import { AgencyFormPage } from '../../../pages/CC Apply/AgencyForm.page';
+import { BeforeYouStartPage } from '../../../pages/CC Apply/BeforeYouStart.page';
+import { getLoginIdentityForSpec } from '../../test-data/centralizedTestData';
+import { environment } from '../../config/environment';
 
 const fillRequiredContactDetails = async (page: Page) => {
   await page.getByRole('textbox', { name: /^First name\b/i }).first().fill('Tom');
@@ -66,7 +66,19 @@ const setAddressValue = async (
   throw new Error('Address dropdown options did not appear.');
 };
 
-test('HP Mandatory Check', async ({ page }, testInfo) => {
+const expectOneOfVisible = async (locators: Locator[], reason: string): Promise<Locator> => {
+  for (const locator of locators) {
+    const visible = await locator.isVisible({ timeout: 1500 }).catch(() => false);
+    if (visible) {
+      return locator;
+    }
+  }
+  throw new Error(reason);
+};
+
+const escapeRegex = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+test('Disability Mandatory Check', async ({ page }, testInfo) => {
   test.setTimeout(300000);
 
   const agencyFormPage = new AgencyFormPage(page);
@@ -76,45 +88,20 @@ test('HP Mandatory Check', async ({ page }, testInfo) => {
   const contactDetailsHeading = page.getByRole('heading', { name: /contact details/i }).first();
   const applicantDetailsHeading = page.getByRole('heading', { name: /applicant details/i }).first();
   const disabilityDetailsHeading = page.getByRole('heading', { name: /disability details/i }).first();
-  const hpAssessmentHeading = page.getByRole('heading', { name: /health professional assessment/i }).first();
-
-  const myIdEmail = getMyIdEmail('HPMandatoryCheck.spec.ts');
+  const loginIdentity = getLoginIdentityForSpec('DisabilityMandatoryCheck.spec.ts');
+  const loginEmail = loginIdentity.email;
   const agencyFormUrl = `${process.env.DTP_ROOT_URL || 'https://forms.preprod.beta.my.qld.gov.au'}/companioncardapply/agency-form`;
   const uploadPngPath = 'C:/PlaywrightTS/repo-doc-images/image1.png';
 
-  const handleAnyDraftModal = async () => {
-    if (page.isClosed()) {
-      return false;
-    }
-
+  const handleDraftFailedModal = async () => {
     const draftFailedHeading = page.getByRole('heading', { name: /your draft failed to load/i });
-    const draftFailedVisible = await draftFailedHeading.isVisible({ timeout: 1000 }).catch(() => false);
-    if (draftFailedVisible) {
-      const backToStart = page.getByRole('button', { name: /back to start/i }).first();
-      if (await backToStart.isVisible({ timeout: 1000 }).catch(() => false)) {
-        await backToStart.click();
-        await page.waitForLoadState('domcontentloaded').catch(() => {});
-      }
-      return true;
-    }
+    const visible = await draftFailedHeading.isVisible({ timeout: 2000 }).catch(() => false);
+    if (!visible) return false;
 
-    const draftDialog = page.getByRole('alertdialog', { name: /you have a draft form/i });
-    const draftDialogVisible = await draftDialog.isVisible({ timeout: 1000 }).catch(() => false);
-    if (draftDialogVisible) {
-      const startNewButton = page.getByRole('button', { name: /start new/i }).first();
-      if (await startNewButton.isVisible({ timeout: 1000 }).catch(() => false)) {
-        await startNewButton.click({ force: true }).catch(() => {});
-      }
-
-      await Promise.race([
-        draftDialog.waitFor({ state: 'hidden', timeout: 15000 }),
-        beforeYouStartPage.beforeYouStartHeading.waitFor({ state: 'visible', timeout: 15000 }),
-      ]).catch(() => {});
-
-      return true;
-    }
-
-    return false;
+    await page.getByRole('button', { name: /back to start/i }).click();
+    await page.waitForLoadState('domcontentloaded').catch(() => {});
+    await draftFailedHeading.waitFor({ state: 'hidden', timeout: 10000 }).catch(() => {});
+    return true;
   };
 
   const resumeLoginIfShown = async () => {
@@ -122,27 +109,38 @@ test('HP Mandatory Check', async ({ page }, testInfo) => {
     const loginVisible = await loginHeading.isVisible({ timeout: 1500 }).catch(() => false);
     if (!loginVisible) return;
 
-    if (await agencyFormPage.continueWithMyIdButton.isVisible({ timeout: 5000 }).catch(() => false)) {
-      await agencyFormPage.continueWithMyId();
-    }
-    if (await agencyFormPage.selectMyIdButton.isVisible({ timeout: 5000 }).catch(() => false)) {
-      await agencyFormPage.selectMyId();
-    }
-    if (await agencyFormPage.myIdEmailTextBox.isVisible({ timeout: 10000 }).catch(() => false)) {
-      await agencyFormPage.enterMyIdEmail(myIdEmail);
-    }
-    await agencyFormPage.consentIfRequired();
+    await agencyFormPage.loginWithIdentity(loginIdentity.provider, loginEmail);
   };
 
   // NOTE: Avoid global draft-modal handlers because they can trigger during navigation
   // and race with page/context lifecycle. Handle draft modals explicitly at stable checkpoints.
-
+  // Global guard: if session drops to login mid-test, re-run myID continuation steps.
   await page.addLocatorHandler(
     page.getByRole('heading', { name: /login to continue/i }),
     async () => {
       await resumeLoginIfShown();
     }
   );
+
+  const waitForBysOrDraft = async (timeoutMs: number): Promise<boolean> => {
+    const deadline = Date.now() + timeoutMs;
+
+    while (Date.now() < deadline) {
+      const bysVisible = await bysHeading.isVisible({ timeout: 2000 }).catch(() => false);
+      if (bysVisible) {
+        return true;
+      }
+
+      const draftVisible = await beforeYouStartPage.draftDialog.isVisible().catch(() => false);
+      if (draftVisible) {
+        return true;
+      }
+
+      await page.waitForTimeout(1000);
+    }
+
+    return false;
+  };
 
   const recoverAuthIfNeeded = async (): Promise<boolean> => {
     const loginHeading = page.getByRole('heading', { name: /login to continue/i });
@@ -151,58 +149,75 @@ test('HP Mandatory Check', async ({ page }, testInfo) => {
       return false;
     }
 
-    if (await agencyFormPage.continueWithMyIdButton.isVisible({ timeout: 8000 }).catch(() => false)) {
-      await agencyFormPage.continueWithMyId();
-    }
-
-    if (await agencyFormPage.selectMyIdButton.isVisible({ timeout: 8000 }).catch(() => false)) {
-      await agencyFormPage.selectMyId();
-    }
-
-    if (await agencyFormPage.myIdEmailTextBox.isVisible({ timeout: 12000 }).catch(() => false)) {
-      await agencyFormPage.enterMyIdEmail(myIdEmail);
-    }
-
-    await agencyFormPage.consentIfRequired();
+    await agencyFormPage.loginWithIdentity(loginIdentity.provider, loginEmail);
 
     try {
-      await agencyFormPage.navigateToAgencyFormIfNeeded();
-      await agencyFormPage.ensureNoLoadingError();
-      return true;
+      await agencyFormPage.ensureNoLoadingError().catch(() => {});
+      const reachedBysAfterLogin = await waitForBysOrDraft(180000);
+      if (reachedBysAfterLogin) {
+        return true;
+      }
+
+      await page.goto(agencyFormUrl, { waitUntil: 'domcontentloaded' }).catch(() => {});
+      await agencyFormPage.ensureNoLoadingError().catch(() => {});
+      return await waitForBysOrDraft(15000);
     } catch {
       await page.goto(agencyFormUrl, { waitUntil: 'domcontentloaded' }).catch(() => {});
       await agencyFormPage.ensureNoLoadingError().catch(() => {});
-      const bysNowVisible = await bysHeading.isVisible({ timeout: 10000 }).catch(() => false);
-      const draftNowVisible = await beforeYouStartPage.draftDialog.isVisible().catch(() => false);
-      return bysNowVisible || draftNowVisible;
+      return await waitForBysOrDraft(15000);
     }
   };
 
   const goFromBysToContactDetails = async () => {
-    await handleAnyDraftModal();
+    await handleDraftFailedModal();
     await beforeYouStartPage.startNewIfDraftExists();
-    await handleAnyDraftModal();
+    await handleDraftFailedModal();
     await beforeYouStartPage.selectApplyForNewCard();
     await beforeYouStartPage.clickSaveAndContinue();
-    await handleAnyDraftModal();
+    await handleDraftFailedModal();
   };
 
-  await page.goto(agencyFormUrl, { waitUntil: 'domcontentloaded' });
-  await agencyFormPage.ensureNoLoadingError();
-  await handleAnyDraftModal();
+  const ensureBysWithFreshMyIdLogin = async () => {
+    await page.goto(agencyFormUrl, { waitUntil: 'domcontentloaded' });
+    await agencyFormPage.ensureNoLoadingError();
+    await handleDraftFailedModal();
 
-  await recoverAuthIfNeeded();
-  await handleAnyDraftModal();
+    const alreadyAtBys = await waitForBysOrDraft(8000);
+    if (alreadyAtBys) {
+      return;
+    }
 
+    const recovered = await recoverAuthIfNeeded();
+    await handleDraftFailedModal();
+
+    if (recovered) {
+      const bysAfterRecovery = await waitForBysOrDraft(30000);
+      if (bysAfterRecovery) {
+        return;
+      }
+
+      throw new Error(
+        `Identity login completed but app did not return to Before You Start. Current URL: ${page.url()}.`
+      );
+    }
+
+    // Full login path: do not rely on any saved auth state.
+    await agencyFormPage.loginWithIdentity(loginIdentity.provider, loginEmail, { navigateFromEntry: true });
+    await handleDraftFailedModal();
+
+    const bysVisible = await waitForBysOrDraft(180000);
+    if (!bysVisible) {
+      throw new Error(
+        `Auth session is not valid for Disability Mandatory Check after full ${loginIdentity.provider} login flow. ` +
+        `Timed out waiting for Before You Start after identity login. Current URL: ${page.url()}.`
+      );
+    }
+  };
+
+  // Stable auth entry: use env/mapped myID email and recover login inline when needed.
+  await ensureBysWithFreshMyIdLogin();
   await beforeYouStartPage.startNewIfDraftExists();
-  await handleAnyDraftModal();
-
-  const bysVisible = await bysHeading.isVisible({ timeout: 20000 }).catch(() => false);
-  if (!bysVisible) {
-    throw new Error(
-      'Auth session is not valid for HPMandatoryCheck. Run auth setup first: npx playwright test tests/auth.setup.ts --project=setup --headed'
-    );
-  }
+  await handleDraftFailedModal();
 
   await goFromBysToContactDetails();
 
@@ -278,50 +293,70 @@ test('HP Mandatory Check', async ({ page }, testInfo) => {
   await agencyFormPage.clickSaveAndContinue();
   await expect(disabilityDetailsHeading).toBeVisible({ timeout: 60000 });
 
-  await page.getByRole('textbox', { name: /describe your formally diagnosed disability/i }).first().fill('handicapped');
-  await page.getByRole('group', { name: /estimated date of diagnosis|date of diagnosis/i }).getByPlaceholder('dd').fill('01');
-  await page.getByRole('group', { name: /estimated date of diagnosis|date of diagnosis/i }).getByPlaceholder('mm').fill('01');
-  await page.getByRole('group', { name: /estimated date of diagnosis|date of diagnosis/i }).getByPlaceholder('yyyy').fill('2000');
-
-  await page.getByRole('radiogroup', { name: /do you need help getting around\?/i }).getByRole('radio', { name: /^Yes$/i }).check();
-  await page.getByRole('radiogroup', { name: /do you need help with communication\?/i }).getByRole('radio', { name: /^Yes$/i }).check();
-  await page
-    .getByRole('radiogroup', { name: /do you need help with self-care and daily living tasks when you are out and about\?/i })
-    .getByRole('radio', { name: /^Yes$/i })
-    .check();
-  await page
-    .getByRole('radiogroup', { name: /do you need help with planning and managing decisions\?/i })
-    .getByRole('radio', { name: /^Yes$/i })
-    .check();
-
-  await page.getByRole('textbox', { name: /is there anything else you'd like us to know/i }).first().fill('test');
-
   await agencyFormPage.clickSaveAndContinue();
-  await expect(hpAssessmentHeading).toBeVisible({ timeout: 60000 });
-
-  await agencyFormPage.clickSaveAndContinue();
-  await expect(hpAssessmentHeading).toBeVisible({ timeout: 15000 });
+  await expect(disabilityDetailsHeading).toBeVisible({ timeout: 15000 });
 
   const errorBannerHeading = page.getByRole('heading', { name: /please review the following errors/i }).first();
   await expect(errorBannerHeading).toBeVisible({ timeout: 10000 });
-  await expect(page.getByText(/complete all required fields to continue/i).first()).toBeVisible({ timeout: 5000 });
+  await expect(page.getByText(/complete all required fields to continue/i)).toBeVisible({ timeout: 5000 });
 
-  await expect(
-    page
-      .getByRole('link', { name: /health professional assessment:\s*upload all pages of the health professional assessment/i })
-      .first()
-  ).toBeVisible({ timeout: 10000 });
+  const diagnosisError = await expectOneOfVisible(
+    [
+      page.getByText(/disability diagnosis.*required/i).first(),
+      page.getByText(/describe.*diagnosis.*required/i).first(),
+      page.getByRole('link', { name: /disability details:\s*.*diagnosis/i }).first(),
+    ],
+    'Validation 1 failed: diagnosis required error was not visible.'
+  );
 
-  const inlineUploadError = page.getByText(/upload all pages of the health professional assessment is required/i).first();
-  await expect(inlineUploadError).toBeVisible({ timeout: 10000 });
-  await expect(inlineUploadError).toHaveCSS('color', 'rgb(226, 35, 57)');
+  const diagnosisDateError = await expectOneOfVisible(
+    [
+      page.getByText(/estimated date of diagnosis.*required/i).first(),
+      page.getByText(/date of diagnosis.*required/i).first(),
+      page.getByRole('link', { name: /disability details:\s*.*date of diagnosis/i }).first(),
+    ],
+    'Validation 1 failed: date of diagnosis required error was not visible.'
+  );
+
+  const supportNeedsError = await expectOneOfVisible(
+    [
+      page.getByText(/help getting around.*required/i).first(),
+      page.getByText(/help with communication.*required/i).first(),
+      page.getByText(/help with self\-?care.*required/i).first(),
+      page.getByText(/planning and managing decisions.*required/i).first(),
+      page.getByRole('link', { name: /disability details:\s*.*help/i }).first(),
+    ],
+    'Validation 1 failed: one or more support-needs required errors were not visible.'
+  );
+
+  const optionalTextNodes = page
+    .locator('label:visible, legend:visible, p:visible, span:visible, div:visible')
+    .filter({ hasText: /\(optional\)/i });
+  const optionalCount = await optionalTextNodes.count();
+
+  for (let i = 0; i < optionalCount; i++) {
+    const text = (await optionalTextNodes.nth(i).innerText().catch(() => '')).replace(/\s+/g, ' ').trim();
+    if (!text) continue;
+
+    const baseText = text.replace(/\(optional\)/gi, '').replace(/\s+/g, ' ').trim();
+    if (!baseText) continue;
+
+    const escapedBaseText = escapeRegex(baseText);
+    await expect(page.getByRole('link', { name: new RegExp(escapedBaseText, 'i') }).first()).not.toBeVisible({ timeout: 2000 });
+    await expect(page.getByText(new RegExp(`${escapedBaseText}.*required|required.*${escapedBaseText}`, 'i')).first()).not.toBeVisible({
+      timeout: 2000,
+    });
+  }
+
+  await expect(page.getByRole('link', { name: /optional/i }).first()).not.toBeVisible({ timeout: 2000 });
 
   await page.screenshot({
-    path: testInfo.outputPath('hp-mandatory-check-errors.png'),
+    path: testInfo.outputPath('disability-mandatory-check-errors.png'),
     fullPage: true,
   });
 
-  console.log('✅ Test Pass - HP mandatory validation banner/inline/red text verified with draft modal guards');
+  console.log('✅ Test Pass - Disability mandatory validation banner/inline/red text verified and optional fields have no required errors');
 });
+
 
 

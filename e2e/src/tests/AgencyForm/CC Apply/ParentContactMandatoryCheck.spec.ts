@@ -1,8 +1,8 @@
 import { test, expect, Locator } from '@playwright/test';
-import { AgencyFormPage } from '../pages/CC Apply/AgencyForm.page';
-import { BeforeYouStartPage } from '../pages/CC Apply/BeforeYouStart.page';
-import { getMyIdEmail } from './test-data/centralizedTestData';
-import { environment } from './config/environment';
+import { AgencyFormPage } from '../../../pages/CC Apply/AgencyForm.page';
+import { BeforeYouStartPage } from '../../../pages/CC Apply/BeforeYouStart.page';
+import { getLoginIdentityForSpec } from '../../test-data/centralizedTestData';
+import { environment } from '../../config/environment';
 
 const failValidation = (num: number, reason: string): never => {
   throw new Error(`Validation ${num} - Fail: ${reason}`);
@@ -20,7 +20,8 @@ test('Parent Contact Mandatory Check', async ({ page }, testInfo) => {
   const beforeYouStartPage = new BeforeYouStartPage(page);
   const bysHeading = page.getByRole('heading', { name: /before you start|what are you trying to do\?/i }).first();
   const contactDetailsHeading = page.getByRole('heading', { name: /contact details/i }).first();
-  const myIdEmail = getMyIdEmail('ParentContactMandatoryCheck.spec.ts');
+  const loginIdentity = getLoginIdentityForSpec('ParentContactMandatoryCheck.spec.ts');
+  const loginEmail = loginIdentity.email;
   const agencyFormUrl = `${process.env.DTP_ROOT_URL || 'https://forms.preprod.beta.my.qld.gov.au'}/companioncardapply/agency-form`;
 
   const handleDraftFailedModal = async () => {
@@ -35,6 +36,26 @@ test('Parent Contact Mandatory Check', async ({ page }, testInfo) => {
     return true;
   };
 
+  const waitForBysOrDraft = async (timeoutMs: number): Promise<boolean> => {
+    const deadline = Date.now() + timeoutMs;
+
+    while (Date.now() < deadline) {
+      const bysVisible = await bysHeading.isVisible({ timeout: 2000 }).catch(() => false);
+      if (bysVisible) {
+        return true;
+      }
+
+      const draftVisible = await beforeYouStartPage.draftDialog.isVisible().catch(() => false);
+      if (draftVisible) {
+        return true;
+      }
+
+      await page.waitForTimeout(1000);
+    }
+
+    return false;
+  };
+
   const recoverAuthIfNeeded = async (): Promise<boolean> => {
     const loginHeading = page.getByRole('heading', { name: /login to continue/i });
     const loginVisible = await loginHeading.isVisible({ timeout: 5000 }).catch(() => false);
@@ -42,30 +63,22 @@ test('Parent Contact Mandatory Check', async ({ page }, testInfo) => {
       return false;
     }
 
-    if (await agencyFormPage.continueWithMyIdButton.isVisible({ timeout: 8000 }).catch(() => false)) {
-      await agencyFormPage.continueWithMyId();
-    }
-
-    if (await agencyFormPage.selectMyIdButton.isVisible({ timeout: 8000 }).catch(() => false)) {
-      await agencyFormPage.selectMyId();
-    }
-
-    if (await agencyFormPage.myIdEmailTextBox.isVisible({ timeout: 12000 }).catch(() => false)) {
-      await agencyFormPage.enterMyIdEmail(myIdEmail);
-    }
-
-    await agencyFormPage.consentIfRequired();
+    await agencyFormPage.loginWithIdentity(loginIdentity.provider, loginEmail);
 
     try {
-      await agencyFormPage.navigateToAgencyFormIfNeeded();
-      await agencyFormPage.ensureNoLoadingError();
-      return true;
+      await agencyFormPage.ensureNoLoadingError().catch(() => {});
+      const reachedBysAfterLogin = await waitForBysOrDraft(180000);
+      if (reachedBysAfterLogin) {
+        return true;
+      }
+
+      await page.goto(agencyFormUrl, { waitUntil: 'domcontentloaded' }).catch(() => {});
+      await agencyFormPage.ensureNoLoadingError().catch(() => {});
+      return await waitForBysOrDraft(15000);
     } catch {
       await page.goto(agencyFormUrl, { waitUntil: 'domcontentloaded' }).catch(() => {});
       await agencyFormPage.ensureNoLoadingError().catch(() => {});
-      const bysNowVisible = await bysHeading.isVisible({ timeout: 10000 }).catch(() => false);
-      const draftNowVisible = await beforeYouStartPage.draftDialog.isVisible().catch(() => false);
-      return bysNowVisible || draftNowVisible;
+      return await waitForBysOrDraft(15000);
     }
   };
 
@@ -78,22 +91,47 @@ test('Parent Contact Mandatory Check', async ({ page }, testInfo) => {
     await handleDraftFailedModal();
   };
 
-  // Stable auth entry: rely on saved storage state, no in-test login flow.
-  await page.goto(agencyFormUrl, { waitUntil: 'domcontentloaded' });
-  await agencyFormPage.ensureNoLoadingError();
-  await handleDraftFailedModal();
+  const ensureBysWithFreshMyIdLogin = async () => {
+    await page.goto(agencyFormUrl, { waitUntil: 'domcontentloaded' });
+    await agencyFormPage.ensureNoLoadingError();
+    await handleDraftFailedModal();
 
-  await recoverAuthIfNeeded();
-  await handleDraftFailedModal();
+    const alreadyAtBys = await waitForBysOrDraft(8000);
+    if (alreadyAtBys) {
+      return;
+    }
 
+    const recovered = await recoverAuthIfNeeded();
+    await handleDraftFailedModal();
+
+    if (recovered) {
+      const bysAfterRecovery = await waitForBysOrDraft(30000);
+      if (bysAfterRecovery) {
+        return;
+      }
+
+      throw new Error(
+        `Identity login completed but app did not return to Before You Start. Current URL: ${page.url()}.`
+      );
+    }
+
+    // Full login path: do not rely on any saved auth state.
+    await agencyFormPage.loginWithIdentity(loginIdentity.provider, loginEmail, { navigateFromEntry: true });
+    await handleDraftFailedModal();
+
+    const bysVisible = await waitForBysOrDraft(180000);
+    if (!bysVisible) {
+      throw new Error(
+        `Auth session is not valid for Parent Contact Mandatory Check after full ${loginIdentity.provider} login flow. ` +
+        `Timed out waiting for Before You Start after identity login. Current URL: ${page.url()}.`
+      );
+    }
+  };
+
+  // Stable auth entry: use env/mapped myID email and recover login inline when needed.
+  await ensureBysWithFreshMyIdLogin();
   await beforeYouStartPage.startNewIfDraftExists();
   await handleDraftFailedModal();
-  const bysVisible = await bysHeading.isVisible({ timeout: 20000 }).catch(() => false);
-  if (!bysVisible) {
-    throw new Error(
-      'Auth session is not valid for ParentContactMandatoryCheck. Run auth setup first: npx playwright test tests/auth.setup.ts --project=setup --headed'
-    );
-  }
 
   // Step 1: BYS -> Apply for a new card.
   await goFromBysToContactDetails();
@@ -233,5 +271,6 @@ test('Parent Contact Mandatory Check', async ({ page }, testInfo) => {
 
   console.log('✅ Test Pass - Conditions are met');
 });
+
 
 

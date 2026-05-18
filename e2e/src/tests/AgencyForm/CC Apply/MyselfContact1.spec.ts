@@ -1,8 +1,7 @@
 import { test, expect, Locator, Page } from '@playwright/test';
-import { AgencyFormPage } from '../pages/CC Apply/AgencyForm.page';
-import { BeforeYouStartPage } from '../pages/CC Apply/BeforeYouStart.page';
-import { getMyIdEmail } from './test-data/centralizedTestData';
-import { environment } from './config/environment';
+import { AgencyFormPage } from '../../../pages/CC Apply/AgencyForm.page';
+import { BeforeYouStartPage } from '../../../pages/CC Apply/BeforeYouStart.page';
+import { getLoginIdentityForSpec } from '../../test-data/centralizedTestData';
 
 const failValidation = (num: number): never => {
   throw new Error(`Validation ${num} - Fail`);
@@ -56,18 +55,12 @@ const fillContactForm = async (
 test('Myself Contact1', async ({ page }, testInfo) => {
   test.setTimeout(240000);
 
-  if (!environment.TEST_RUNNER_CLIENT_ID || !environment.TEST_RUNNER_CLIENT_SECRET) {
-    throw new Error('Missing test runner credentials. Set E2E_TEST_RUNNER_CLIENT_ID and E2E_TEST_RUNNER_CLIENT_SECRET in .env.');
-  }
-  if (!environment.SUBSCRIBER_CLIENT_ID || !environment.SUBSCRIBER_CLIENT_SECRET) {
-    throw new Error('Missing subscriber credentials. Set E2E_SUBSCRIBER_CLIENT_ID and E2E_SUBSCRIBER_CLIENT_SECRET in .env.');
-  }
-
   const agencyFormPage = new AgencyFormPage(page);
   const beforeYouStartPage = new BeforeYouStartPage(page);
   const bysHeading = page.getByRole('heading', { name: /before you start|what are you trying to do\?/i }).first();
   const contactDetailsHeading = page.getByRole('heading', { name: /contact details/i });
-  const myIdEmail = getMyIdEmail('MyselfContact1.spec.ts');
+  const loginIdentity = getLoginIdentityForSpec('MyselfContact1.spec.ts');
+  const loginEmail = loginIdentity.email;
   const agencyFormUrl = `${process.env.DTP_ROOT_URL || 'https://forms.preprod.beta.my.qld.gov.au'}/companioncardapply/agency-form`;
 
   const handleDraftFailedModal = async () => {
@@ -82,6 +75,26 @@ test('Myself Contact1', async ({ page }, testInfo) => {
     return true;
   };
 
+  const waitForBysOrDraft = async (timeoutMs: number): Promise<boolean> => {
+    const deadline = Date.now() + timeoutMs;
+
+    while (Date.now() < deadline) {
+      const bysVisible = await bysHeading.isVisible({ timeout: 2000 }).catch(() => false);
+      if (bysVisible) {
+        return true;
+      }
+
+      const draftVisible = await beforeYouStartPage.draftDialog.isVisible().catch(() => false);
+      if (draftVisible) {
+        return true;
+      }
+
+      await page.waitForTimeout(1000);
+    }
+
+    return false;
+  };
+
   const recoverAuthIfNeeded = async (): Promise<boolean> => {
     const loginHeading = page.getByRole('heading', { name: /login to continue/i });
     const loginVisible = await loginHeading.isVisible({ timeout: 5000 }).catch(() => false);
@@ -89,30 +102,22 @@ test('Myself Contact1', async ({ page }, testInfo) => {
       return false;
     }
 
-    if (await agencyFormPage.continueWithMyIdButton.isVisible({ timeout: 8000 }).catch(() => false)) {
-      await agencyFormPage.continueWithMyId();
-    }
-
-    if (await agencyFormPage.selectMyIdButton.isVisible({ timeout: 8000 }).catch(() => false)) {
-      await agencyFormPage.selectMyId();
-    }
-
-    if (await agencyFormPage.myIdEmailTextBox.isVisible({ timeout: 12000 }).catch(() => false)) {
-      await agencyFormPage.enterMyIdEmail(myIdEmail);
-    }
-
-    await agencyFormPage.consentIfRequired();
+    await agencyFormPage.loginWithIdentity(loginIdentity.provider, loginEmail);
 
     try {
-      await agencyFormPage.navigateToAgencyFormIfNeeded();
-      await agencyFormPage.ensureNoLoadingError();
-      return true;
+      await agencyFormPage.ensureNoLoadingError().catch(() => {});
+      const reachedBysAfterLogin = await waitForBysOrDraft(180000);
+      if (reachedBysAfterLogin) {
+        return true;
+      }
+
+      await page.goto(agencyFormUrl, { waitUntil: 'domcontentloaded' }).catch(() => {});
+      await agencyFormPage.ensureNoLoadingError().catch(() => {});
+      return await waitForBysOrDraft(15000);
     } catch {
       await page.goto(agencyFormUrl, { waitUntil: 'domcontentloaded' }).catch(() => {});
       await agencyFormPage.ensureNoLoadingError().catch(() => {});
-      const bysNowVisible = await bysHeading.isVisible({ timeout: 10000 }).catch(() => false);
-      const draftNowVisible = await beforeYouStartPage.draftDialog.isVisible().catch(() => false);
-      return bysNowVisible || draftNowVisible;
+      return await waitForBysOrDraft(15000);
     }
   };
 
@@ -130,38 +135,35 @@ test('Myself Contact1', async ({ page }, testInfo) => {
     await agencyFormPage.ensureNoLoadingError();
     await handleDraftFailedModal();
 
-    await recoverAuthIfNeeded();
-    await handleDraftFailedModal();
-
-    const bysAfterRecovery = await bysHeading.isVisible({ timeout: 8000 }).catch(() => false);
-    if (bysAfterRecovery) {
+    const alreadyAtBys = await waitForBysOrDraft(8000);
+    if (alreadyAtBys) {
       return;
     }
 
-    // Full login path: do not rely on any saved auth state.
-    await agencyFormPage.goToCompanionCardApply();
-    await agencyFormPage.ensureNoLoadingError();
-
-    if (await agencyFormPage.beginButton.isVisible({ timeout: 10000 }).catch(() => false)) {
-      await agencyFormPage.beginApplication();
-    }
-    if (await agencyFormPage.continueWithMyIdButton.isVisible({ timeout: 10000 }).catch(() => false)) {
-      await agencyFormPage.continueWithMyId();
-    }
-    if (await agencyFormPage.selectMyIdButton.isVisible({ timeout: 10000 }).catch(() => false)) {
-      await agencyFormPage.selectMyId();
-    }
-    if (await agencyFormPage.myIdEmailTextBox.isVisible({ timeout: 15000 }).catch(() => false)) {
-      await agencyFormPage.enterMyIdEmail(myIdEmail);
-    }
-
-    await agencyFormPage.consentIfRequired();
-    await agencyFormPage.navigateToAgencyFormIfNeeded().catch(() => {});
+    const recovered = await recoverAuthIfNeeded();
     await handleDraftFailedModal();
 
-    const bysVisible = await bysHeading.isVisible({ timeout: 20000 }).catch(() => false);
+    if (recovered) {
+      const bysAfterRecovery = await waitForBysOrDraft(30000);
+      if (bysAfterRecovery) {
+        return;
+      }
+
+      throw new Error(
+        `Identity login completed but app did not return to Before You Start. Current URL: ${page.url()}.`
+      );
+    }
+
+    // Full login path: do not rely on any saved auth state.
+    await agencyFormPage.loginWithIdentity(loginIdentity.provider, loginEmail, { navigateFromEntry: true });
+    await handleDraftFailedModal();
+
+    const bysVisible = await waitForBysOrDraft(180000);
     if (!bysVisible) {
-      throw new Error('Auth session is not valid for MyselfContact1 after full login flow. Ensure E2E_MYID_EMAIL (or mapped test-data email) is configured and rerun this spec.');
+      throw new Error(
+        `Auth session is not valid for MyselfContact1 after full ${loginIdentity.provider} login flow. ` +
+        `Timed out waiting for Before You Start after identity login. Current URL: ${page.url()}.`
+      );
     }
   };
 

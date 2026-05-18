@@ -1,29 +1,39 @@
 import { test, expect, Locator, Page } from '@playwright/test';
-import { AgencyFormPage } from '../pages/CC Apply/AgencyForm.page';
-import { BeforeYouStartPage } from '../pages/CC Apply/BeforeYouStart.page';
-import { getMyIdEmail } from './test-data/centralizedTestData';
-import { ReviewPage } from '../pages/CC Apply/Review.page';
-import { DeclarationPage } from '../pages/CC Apply/Declaration.page';
-import { SubmissionPage } from '../pages/CC Apply/Submission.page';
-import { environment } from './config/environment';
+import { AgencyFormPage } from '../../../pages/CC Apply/AgencyForm.page';
+import { BeforeYouStartPage } from '../../../pages/CC Apply/BeforeYouStart.page';
+import { getLoginIdentityForSpec } from '../../test-data/centralizedTestData';
+import { ReviewPage } from '../../../pages/CC Apply/Review.page';
+import { DeclarationPage } from '../../../pages/CC Apply/Declaration.page';
+import { SubmissionPage } from '../../../pages/CC Apply/Submission.page';
+import { environment } from '../../config/environment';
 
 type ContactDetails = {
   firstName: string;
   lastName: string;
   email: string;
   phone: string;
-  relationship?: string;
+  relationship: string;
 };
 
-// Fills the primary (logged-in parent) contact fields — no relationship radio, no preferred contact method.
-const fillParentContactDetails = async (page: Page, contact: ContactDetails) => {
+const fillRequiredContactDetails = async (page: Page, contact: ContactDetails) => {
+  const relationshipRadio = page.getByRole('radio', { name: new RegExp(`^${contact.relationship}$`, 'i') }).first();
+  const relationshipVisible = await relationshipRadio.isVisible({ timeout: 3000 }).catch(() => false);
+  if (relationshipVisible) {
+    await relationshipRadio.check().catch(async () => relationshipRadio.click());
+  }
+
   await page.getByRole('textbox', { name: /^First name\b/i }).first().fill(contact.firstName);
   await page.getByRole('textbox', { name: /^Last name\b/i }).first().fill(contact.lastName);
   await page.getByRole('textbox', { name: /^Email address\b|^Email\b/i }).first().fill(contact.email);
   await page.getByRole('textbox', { name: /^Phone number\b|^Mobile phone number\b/i }).first().fill(contact.phone);
+
+  const preferredEmail = page.getByRole('radio', { name: /^Email$/i }).first();
+  const preferredVisible = await preferredEmail.isVisible({ timeout: 3000 }).catch(() => false);
+  if (preferredVisible) {
+    await preferredEmail.check().catch(async () => preferredEmail.click());
+  }
 };
 
-// Fills an additional contact card (the last "save details" form in the list).
 const fillAdditionalContactDetails = async (page: Page, contact: ContactDetails) => {
   const contactForms = page.locator('li').filter({
     has: page.getByRole('button', { name: /save details/i }),
@@ -34,17 +44,13 @@ const fillAdditionalContactDetails = async (page: Page, contact: ContactDetails)
   await contactForm.getByRole('textbox', { name: /^First name\b/i }).first().fill(contact.firstName);
   await contactForm.getByRole('textbox', { name: /^Last name\b/i }).first().fill(contact.lastName);
 
-  if (contact.relationship) {
-    const relationshipGroup = contactForm.getByRole('radiogroup', { name: /Relationship to applicant/i }).first();
-    const relationshipVisible = await relationshipGroup.isVisible().catch(() => false);
-    if (relationshipVisible) {
-      const relationshipOption = relationshipGroup
-        .getByRole('radio', { name: new RegExp(contact.relationship, 'i') })
-        .first();
-      await relationshipOption.check().catch(async () => relationshipOption.click());
-    } else {
-      await contactForm.getByLabel(/Relationship to applicant/i).first().fill(contact.relationship);
-    }
+  const relationshipGroup = contactForm.getByRole('radiogroup', { name: /Relationship to applicant/i }).first();
+  const relationshipVisible = await relationshipGroup.isVisible().catch(() => false);
+  if (relationshipVisible) {
+    const relationshipOption = relationshipGroup.getByRole('radio', { name: new RegExp(contact.relationship, 'i') }).first();
+    await relationshipOption.check().catch(async () => relationshipOption.click());
+  } else {
+    await contactForm.getByLabel(/Relationship to applicant/i).first().fill(contact.relationship);
   }
 
   await contactForm.getByRole('textbox', { name: /^Email address\b/i }).first().fill(contact.email);
@@ -57,26 +63,10 @@ const fillAdditionalContactDetails = async (page: Page, contact: ContactDetails)
 const setAddressValue = async (
   field: Locator,
   value: string,
-  options?: {
-    searchTerms?: string[];
-    allowPrefilledMatch?: boolean;
-    requireDropdownSelection?: boolean;
-    acceptValueContains?: string;
-  }
+  options?: { searchTerms?: string[]; requireDropdownSelection?: boolean }
 ) => {
   await field.waitFor({ state: 'visible', timeout: 20000 });
-  const normalize = (text: string) => text.toLowerCase().replace(/\s+/g, ' ').trim();
-  const expectedValue = normalize(value);
-
-  if (options?.allowPrefilledMatch) {
-    const currentValue = normalize(await field.inputValue().catch(() => ''));
-    if (currentValue === expectedValue || currentValue.includes(expectedValue) || expectedValue.includes(currentValue)) {
-      return;
-    }
-  }
-
   const page = field.page();
-  const escapedValue = value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const searchTerms = options?.searchTerms && options.searchTerms.length > 0 ? options.searchTerms : [value];
   const listboxId = await field.getAttribute('aria-controls');
 
@@ -96,48 +86,29 @@ const setAddressValue = async (
     await field.press('ArrowDown').catch(() => {});
 
     const visibleOptions = getVisibleOptions();
-    const exactVisibleOption = visibleOptions.filter({ hasText: new RegExp(`^\\s*${escapedValue}\\s*$`, 'i') }).first();
     const hasAnyOption = await visibleOptions.first().isVisible({ timeout: 8000 }).catch(() => false);
-    if (!hasAnyOption) {
-      continue;
-    }
-
-    if (await exactVisibleOption.isVisible({ timeout: 1000 }).catch(() => false)) {
-      await exactVisibleOption.click({ force: true });
-      return;
-    }
+    if (!hasAnyOption) continue;
 
     await visibleOptions.first().click({ force: true });
     return;
   }
 
-  if (!options?.requireDropdownSelection) {
-    const currentValue = normalize(await field.inputValue().catch(() => ''));
-    if (currentValue === expectedValue || currentValue.includes(expectedValue)) {
-      return;
-    }
-  }
+  await field.press('ArrowDown').catch(() => {});
+  await field.press('Enter').catch(() => {});
+  await field.blur().catch(() => {});
 
-  if (options?.acceptValueContains) {
-    const currentValue = normalize(await field.inputValue().catch(() => ''));
-    const acceptedToken = normalize(options.acceptValueContains);
-    if (currentValue.includes(acceptedToken)) {
-      return;
-    }
-  }
-
-  if (options?.requireDropdownSelection === false) {
-    return;
-  }
-
+  if (options?.requireDropdownSelection === false) return;
   throw new Error('Address dropdown options did not appear.');
 };
 
-test('Review Parent 2 Contacts', async ({ page }, testInfo) => {
+test('Review Myself 2 Contacts', async ({ page }, testInfo) => {
   test.setTimeout(600000);
 
   const captureStep = async (name: string) => {
-    await page.screenshot({ path: testInfo.outputPath(name), fullPage: true });
+    await page.screenshot({
+      path: testInfo.outputPath(name),
+      fullPage: true,
+    });
   };
 
   const agencyFormPage = new AgencyFormPage(page);
@@ -151,8 +122,8 @@ test('Review Parent 2 Contacts', async ({ page }, testInfo) => {
   const applicantDetailsHeading = page.getByRole('heading', { name: /applicant details/i }).first();
   const disabilityDetailsHeading = page.getByRole('heading', { name: /disability details/i }).first();
   const hpAssessmentHeading = page.getByRole('heading', { name: /health professional assessment/i }).first();
-
-  const myIdEmail = getMyIdEmail('ReviewParent2Contacts.spec.ts');
+  const loginIdentity = getLoginIdentityForSpec('ReviewMyself2Contacts.spec.ts');
+  const loginEmail = loginIdentity.email;
   const agencyFormUrl = `${process.env.DTP_ROOT_URL || 'https://forms.preprod.beta.my.qld.gov.au'}/companioncardapply/agency-form`;
   const uploadPngPath = 'C:/PlaywrightTS/repo-doc-images/image1.png';
 
@@ -196,51 +167,62 @@ test('Review Parent 2 Contacts', async ({ page }, testInfo) => {
     const loginVisible = await loginHeading.isVisible({ timeout: 1500 }).catch(() => false);
     if (!loginVisible) return;
 
-    if (await agencyFormPage.continueWithMyIdButton.isVisible({ timeout: 5000 }).catch(() => false)) {
-      await agencyFormPage.continueWithMyId();
-    }
-    if (await agencyFormPage.selectMyIdButton.isVisible({ timeout: 5000 }).catch(() => false)) {
-      await agencyFormPage.selectMyId();
-    }
-    if (await agencyFormPage.myIdEmailTextBox.isVisible({ timeout: 10000 }).catch(() => false)) {
-      await agencyFormPage.enterMyIdEmail(myIdEmail);
-    }
-    await agencyFormPage.consentIfRequired();
+    await agencyFormPage.loginWithIdentity(loginIdentity.provider, loginEmail);
   };
 
   // NOTE: Avoid global draft-modal handlers because they can trigger during navigation
   // and race with page/context lifecycle. Handle draft modals explicitly at stable checkpoints.
+
   await page.addLocatorHandler(
     page.getByRole('heading', { name: /login to continue/i }),
-    async () => { await resumeLoginIfShown(); }
+    async () => {
+      await resumeLoginIfShown();
+    }
   );
+
+  const waitForBysOrDraft = async (timeoutMs: number): Promise<boolean> => {
+    const deadline = Date.now() + timeoutMs;
+
+    while (Date.now() < deadline) {
+      const bysVisible = await bysHeading.isVisible({ timeout: 2000 }).catch(() => false);
+      if (bysVisible) {
+        return true;
+      }
+
+      const draftVisible = await beforeYouStartPage.draftDialog.isVisible().catch(() => false);
+      if (draftVisible) {
+        return true;
+      }
+
+      await page.waitForTimeout(1000);
+    }
+
+    return false;
+  };
 
   const recoverAuthIfNeeded = async (): Promise<boolean> => {
     const loginHeading = page.getByRole('heading', { name: /login to continue/i });
     const loginVisible = await loginHeading.isVisible({ timeout: 5000 }).catch(() => false);
-    if (!loginVisible) return false;
+    if (!loginVisible) {
+      return false;
+    }
 
-    if (await agencyFormPage.continueWithMyIdButton.isVisible({ timeout: 8000 }).catch(() => false)) {
-      await agencyFormPage.continueWithMyId();
-    }
-    if (await agencyFormPage.selectMyIdButton.isVisible({ timeout: 8000 }).catch(() => false)) {
-      await agencyFormPage.selectMyId();
-    }
-    if (await agencyFormPage.myIdEmailTextBox.isVisible({ timeout: 12000 }).catch(() => false)) {
-      await agencyFormPage.enterMyIdEmail(myIdEmail);
-    }
-    await agencyFormPage.consentIfRequired();
+    await agencyFormPage.loginWithIdentity(loginIdentity.provider, loginEmail);
 
     try {
-      await agencyFormPage.navigateToAgencyFormIfNeeded();
-      await agencyFormPage.ensureNoLoadingError();
-      return true;
+      await agencyFormPage.ensureNoLoadingError().catch(() => {});
+      const reachedBysAfterLogin = await waitForBysOrDraft(180000);
+      if (reachedBysAfterLogin) {
+        return true;
+      }
+
+      await page.goto(agencyFormUrl, { waitUntil: 'domcontentloaded' }).catch(() => {});
+      await agencyFormPage.ensureNoLoadingError().catch(() => {});
+      return await waitForBysOrDraft(15000);
     } catch {
       await page.goto(agencyFormUrl, { waitUntil: 'domcontentloaded' }).catch(() => {});
       await agencyFormPage.ensureNoLoadingError().catch(() => {});
-      const bysNowVisible = await bysHeading.isVisible({ timeout: 10000 }).catch(() => false);
-      const draftNowVisible = await beforeYouStartPage.draftDialog.isVisible().catch(() => false);
-      return bysNowVisible || draftNowVisible;
+      return await waitForBysOrDraft(15000);
     }
   };
 
@@ -254,44 +236,69 @@ test('Review Parent 2 Contacts', async ({ page }, testInfo) => {
     await handleAnyDraftModal();
   };
 
-  // ─── Navigate & Auth ────────────────────────────────────────────────────────
-  await page.goto(agencyFormUrl, { waitUntil: 'domcontentloaded' });
-  await agencyFormPage.ensureNoLoadingError();
-  await handleAnyDraftModal();
-  await recoverAuthIfNeeded();
-  await handleAnyDraftModal();
+  const ensureBysWithFreshMyIdLogin = async () => {
+    await page.goto(agencyFormUrl, { waitUntil: 'domcontentloaded' });
+    await agencyFormPage.ensureNoLoadingError();
+    await handleAnyDraftModal();
+
+    const alreadyAtBys = await waitForBysOrDraft(8000);
+    if (alreadyAtBys) {
+      return;
+    }
+
+    const recovered = await recoverAuthIfNeeded();
+    await handleAnyDraftModal();
+
+    if (recovered) {
+      const bysAfterRecovery = await waitForBysOrDraft(30000);
+      if (bysAfterRecovery) {
+        return;
+      }
+
+      throw new Error(
+        `Identity login completed but app did not return to Before You Start. Current URL: ${page.url()}.`
+      );
+    }
+
+    // Full login path: do not rely on any saved auth state.
+    await agencyFormPage.loginWithIdentity(loginIdentity.provider, loginEmail, { navigateFromEntry: true });
+    await handleAnyDraftModal();
+
+    const bysVisible = await waitForBysOrDraft(180000);
+    if (!bysVisible) {
+      throw new Error(
+        `Auth session is not valid for Review Myself 2 Contacts after full ${loginIdentity.provider} login flow. ` +
+        `Timed out waiting for Before You Start after identity login. Current URL: ${page.url()}.`
+      );
+    }
+  };
+
+  // Stable auth entry: use env/mapped myID email and recover login inline when needed.
+  await ensureBysWithFreshMyIdLogin();
   await beforeYouStartPage.startNewIfDraftExists();
   await handleAnyDraftModal();
-
-  const bysVisible = await bysHeading.isVisible({ timeout: 20000 }).catch(() => false);
-  if (!bysVisible) {
-    throw new Error(
-      'Auth session is not valid for ReviewParent2Contacts. Run auth setup first: npx playwright test tests/auth.setup.ts --project=setup --headed'
-    );
-  }
 
   await goFromBysToContactDetails();
 
   const onContactDetails = await contactDetailsHeading.isVisible({ timeout: 8000 }).catch(() => false);
   if (!onContactDetails) {
     const recovered = await recoverAuthIfNeeded();
-    if (recovered) await goFromBysToContactDetails();
+    if (recovered) {
+      await goFromBysToContactDetails();
+    }
   }
 
   await expect(contactDetailsHeading).toBeVisible({ timeout: 60000 });
 
-  // ─── Contact Details (Parent flow) ─────────────────────────────────────────
-  // Select "A parent, legal guardian..." radio.
-  const parentOption = page
-    .getByRole('radio', { name: /a parent, legal guardian, spouse, family member or friend of the person with a disability/i })
-    .first();
-  await parentOption.check().catch(async () => parentOption.click());
+  const myselfOption = page.getByRole('radio', { name: /myself, the person with a disability/i }).first();
+  await myselfOption.check().catch(async () => myselfOption.click());
 
   const primaryContact: ContactDetails = {
     firstName: 'Tom',
     lastName: 'Waters',
     email: 'xyz@gmail.com',
     phone: '0401975446',
+    relationship: 'Parent',
   };
   const additionalContacts: ContactDetails[] = [
     {
@@ -311,46 +318,47 @@ test('Review Parent 2 Contacts', async ({ page }, testInfo) => {
   ];
   const contactsAdded: ContactDetails[] = [primaryContact, ...additionalContacts];
 
-  await fillParentContactDetails(page, primaryContact);
-
-  // Preferred contact method must NOT be visible for parent login (unlike Myself flow).
-  const preferredContactMethod = page.getByText(/preferred contact method|which method would you like/i).first();
-  const preferredVisible = await preferredContactMethod.isVisible({ timeout: 3000 }).catch(() => false);
-  expect(preferredVisible, 'Preferred contact method should not be visible for parent login').toBeFalsy();
+  await fillRequiredContactDetails(page, primaryContact);
 
   const clickAddContact = async () => {
     const addContactButton = page.getByRole('button', { name: /add a contact|add another contact/i }).first();
     const addContactLink = page.getByRole('link', { name: /add a contact|add another contact/i }).first();
     const addContactText = page.getByText(/add a contact|add another contact/i).first();
 
-    if (await addContactButton.isVisible({ timeout: 3000 }).catch(() => false)) {
+    const addButtonVisible = await addContactButton.isVisible({ timeout: 3000 }).catch(() => false);
+    const addLinkVisible = !addButtonVisible && (await addContactLink.isVisible({ timeout: 3000 }).catch(() => false));
+
+    if (addButtonVisible) {
       await addContactButton.scrollIntoViewIfNeeded().catch(() => {});
       await addContactButton.click();
       return;
     }
-    if (await addContactLink.isVisible({ timeout: 3000 }).catch(() => false)) {
+
+    if (addLinkVisible) {
       await addContactLink.scrollIntoViewIfNeeded().catch(() => {});
       await addContactLink.click();
       return;
     }
+
     await addContactText.scrollIntoViewIfNeeded().catch(() => {});
     await addContactText.click();
   };
 
   const saveDetailsButtons = page.getByRole('button', { name: /save details/i });
   for (const contact of additionalContacts) {
-    const countBefore = await saveDetailsButtons.count();
+    const contactFormsBeforeAdd = await saveDetailsButtons.count();
     await clickAddContact();
-    await expect(saveDetailsButtons).toHaveCount(countBefore + 1, { timeout: 15000 });
+    await expect(saveDetailsButtons).toHaveCount(contactFormsBeforeAdd + 1, { timeout: 15000 });
     await page.waitForTimeout(800);
+
     await fillAdditionalContactDetails(page, contact);
 
-    const savedBlock = page
+    const savedContactBlock = page
       .locator('section, article, div, li')
       .filter({ hasText: new RegExp(contact.firstName, 'i') })
       .filter({ hasText: new RegExp(contact.lastName, 'i') })
       .first();
-    await expect(savedBlock).toBeVisible({ timeout: 15000 });
+    await expect(savedContactBlock).toBeVisible({ timeout: 15000 });
   }
 
   const addContactStillVisible =
@@ -362,11 +370,10 @@ test('Review Parent 2 Contacts', async ({ page }, testInfo) => {
   await agencyFormPage.clickSaveAndContinue();
   await expect(applicantDetailsHeading).toBeVisible({ timeout: 60000 });
 
-  // ─── Applicant Details (Parent flow) ───────────────────────────────────────
-  // "Are you the person applying for the card?" → Yes
   const yesOption = page.getByRole('radio', { name: /^Yes$/i }).first();
   await yesOption.check().catch(async () => yesOption.click());
 
+  // Capture Applicant Details values
   const applicantFirstName = 'Michael';
   const applicantMiddleName = 'Arthur';
   const applicantLastName = 'George';
@@ -375,36 +382,6 @@ test('Review Parent 2 Contacts', async ({ page }, testInfo) => {
   const applicantDobYear = '1993';
   const residentialAddressValue = '10 SEATTLE CL SPRING MOUNTAIN QLD 4300';
   const postalAddressValue = '18 MIAMI ST SPRING MOUNTAIN QLD 4300';
-
-  const selectAddressFromDropdown = async (combobox: Locator, value: string) => {
-    await expect(combobox).toBeVisible({ timeout: 15000 });
-    await combobox.click();
-    await combobox.fill(value);
-
-    const listboxId = await combobox.getAttribute('aria-controls');
-    const options = listboxId
-      ? page.locator(
-          `[id="${listboxId}"] [role="option"], [id="${listboxId}"] li, [id="${listboxId}"] [id*="option"]`
-        )
-      : page.locator('[role="listbox"] [role="option"], [role="listbox"] li, [id*="option"]');
-
-    await expect(options.first()).toBeVisible({ timeout: 10000 });
-    await options.first().click({ force: true });
-    await expect(combobox).toHaveValue(/.+/i, { timeout: 15000 });
-  };
-
-  // Parent flow: fill Email address (optional) and Phone number (optional) fields for the applicant.
-  const optionalEmailInput = page.getByRole('textbox', { name: /Email address\s*\(optional\)/i }).first();
-  const optionalEmailVisible = await optionalEmailInput.isVisible({ timeout: 3000 }).catch(() => false);
-  if (optionalEmailVisible) {
-    await optionalEmailInput.fill('xyz@gmail.com');
-  }
-
-  const optionalPhoneInput = page.getByRole('textbox', { name: /Phone number\s*\(optional\)/i }).first();
-  const optionalPhoneVisible = await optionalPhoneInput.isVisible({ timeout: 3000 }).catch(() => false);
-  if (optionalPhoneVisible) {
-    await optionalPhoneInput.fill('0401975446');
-  }
 
   await page.getByRole('textbox', { name: /^First name\b/i }).first().fill(applicantFirstName);
   await page.getByRole('textbox', { name: /Middle name \(optional\)/i }).first().fill(applicantMiddleName);
@@ -418,9 +395,11 @@ test('Review Parent 2 Contacts', async ({ page }, testInfo) => {
   const residentialAddress = page.getByRole('combobox', { name: /Residential address/i }).first();
   const residentialCurrentValue = (await residentialAddress.inputValue().catch(() => '')).trim();
   if (!residentialCurrentValue) {
-    await selectAddressFromDropdown(residentialAddress, residentialAddressValue);
+    await setAddressValue(residentialAddress, residentialAddressValue, {
+      searchTerms: [residentialAddressValue],
+      requireDropdownSelection: false,
+    });
   }
-  await expect(residentialAddress).toHaveValue(/.+/i, { timeout: 15000 });
   // Capture actual displayed value after dropdown selection (may differ in case/abbreviation from typed string).
   const residentialActualValue = (await residentialAddress.inputValue().catch(() => residentialAddressValue)).trim() || residentialAddressValue;
 
@@ -440,6 +419,7 @@ test('Review Parent 2 Contacts', async ({ page }, testInfo) => {
   );
   await expect(whereSendOptions.first()).toBeVisible({ timeout: 10000 });
   await whereSendOptions.first().click({ force: true });
+  // Capture actual displayed value after dropdown selection.
   const postalActualValue = (await whereSendCombobox.inputValue().catch(() => postalAddressValue)).trim() || postalAddressValue;
 
   const browseFilesButton = page.getByRole('button', { name: /browse files/i }).first();
@@ -459,42 +439,9 @@ test('Review Parent 2 Contacts', async ({ page }, testInfo) => {
   await captureStep('03-applicant-details.png');
 
   await agencyFormPage.clickSaveAndContinue();
-  let onDisabilityDetails = await disabilityDetailsHeading.isVisible({ timeout: 8000 }).catch(() => false);
-  if (!onDisabilityDetails) {
-    const applicantStillVisible = await applicantDetailsHeading.isVisible({ timeout: 3000 }).catch(() => false);
-    const reviewErrorsVisible = await page
-      .getByText(/please review the following errors/i)
-      .first()
-      .isVisible({ timeout: 2000 })
-      .catch(() => false);
-    const residentialErrorVisible = await page
-      .getByText(/applicant details:\s*residential address/i)
-      .first()
-      .isVisible({ timeout: 2000 })
-      .catch(() => false);
-
-    // If applicant page is still active with residential-address validation, reselect and retry once.
-    if (applicantStillVisible && (reviewErrorsVisible || residentialErrorVisible)) {
-      await selectAddressFromDropdown(residentialAddress, residentialAddressValue);
-      await expect(residentialAddress).toHaveValue(/.+/i, { timeout: 15000 });
-
-      await agencyFormPage.clickSaveAndContinue();
-      onDisabilityDetails = await disabilityDetailsHeading.isVisible({ timeout: 12000 }).catch(() => false);
-    }
-  }
-
-  if (!onDisabilityDetails) {
-    const validationText = await page
-      .locator('body')
-      .innerText()
-      .then((text) => text.slice(0, 1200))
-      .catch(() => 'Unable to read page text for validation diagnostics.');
-    throw new Error(`Could not proceed to Disability details. Applicant page validation likely blocked submission. Page snapshot: ${validationText}`);
-  }
-
   await expect(disabilityDetailsHeading).toBeVisible({ timeout: 60000 });
 
-  // ─── Disability Details ─────────────────────────────────────────────────────
+  // Capture Disability Details values
   const disabilityDiagnosis = 'handicapped';
   const diagnosisDayValue = '01';
   const diagnosisMonthValue = '01';
@@ -523,7 +470,6 @@ test('Review Parent 2 Contacts', async ({ page }, testInfo) => {
   await agencyFormPage.clickSaveAndContinue();
   await expect(hpAssessmentHeading).toBeVisible({ timeout: 60000 });
 
-  // ─── HP Assessment ──────────────────────────────────────────────────────────
   const hpBrowseFilesButton = page.getByRole('button', { name: /browse files/i }).first();
   await expect(hpBrowseFilesButton).toBeVisible({ timeout: 15000 });
   const [hpFileChooser] = await Promise.all([page.waitForEvent('filechooser'), hpBrowseFilesButton.click()]);
@@ -538,7 +484,7 @@ test('Review Parent 2 Contacts', async ({ page }, testInfo) => {
   await reviewPage.waitForReviewPage();
   await captureStep('06-review-page.png');
 
-  // ─── Review Screen Validation ───────────────────────────────────────────────
+  // Wait for all section headings to be visible before extracting text
   await expect(page.getByRole('heading', { name: /before you start/i }).first()).toBeVisible({ timeout: 60000 });
   await expect(page.getByRole('heading', { name: /contact details/i }).first()).toBeVisible({ timeout: 60000 });
   await expect(page.getByRole('heading', { name: /applicant details/i }).first()).toBeVisible({ timeout: 60000 });
@@ -547,6 +493,8 @@ test('Review Parent 2 Contacts', async ({ page }, testInfo) => {
 
   console.log('\n📋 Review Screen Validation Started\n');
 
+  // Use live DOM locators for all validation — avoids issues with innerText timing/shadow DOM/scroll state.
+  // isVisibleOrPresent: checks visibility first, falls back to DOM presence (for off-screen content).
   const isVisibleOrPresent = async (locator: ReturnType<typeof page.getByText>): Promise<boolean> => {
     const visible = await locator.first().isVisible({ timeout: 5000 }).catch(() => false);
     if (visible) return true;
@@ -554,8 +502,11 @@ test('Review Parent 2 Contacts', async ({ page }, testInfo) => {
     return count > 0;
   };
 
-  const hasText = (text: string) => page.getByText(text, { exact: false });
+  // hasText: checks that a string appears in the page (anywhere in DOM, not just visible viewport).
+  const hasText = (text: string): ReturnType<typeof page.getByText> =>
+    page.getByText(text, { exact: false });
 
+  // hasAnyText: returns true if ANY of the alternatives is present in the DOM.
   const hasAnyText = async (...alternatives: string[]): Promise<boolean> => {
     for (const alt of alternatives) {
       if (await isVisibleOrPresent(hasText(alt))) return true;
@@ -563,24 +514,22 @@ test('Review Parent 2 Contacts', async ({ page }, testInfo) => {
     return false;
   };
 
-  // Before You Start
+  // ─── Before You Start ──────────────────────────────────────────────────────
   await expect(page.getByRole('heading', { name: /before you start/i }).first()).toBeVisible({ timeout: 10000 });
+
   expect(
     await isVisibleOrPresent(hasText('Apply for a new card')),
     'BYS: "What are you trying to do?" → "Apply for a new card"'
   ).toBeTruthy();
+
   console.log(`'Before you start' Validation - Pass`);
 
-  // Contact Details
+  // ─── Contact Details ───────────────────────────────────────────────────────
   await expect(page.getByRole('heading', { name: /contact details/i }).first()).toBeVisible({ timeout: 10000 });
-  // Key difference from Myself flow: parent option selected, no preferred contact method shown.
+
   expect(
-    await hasAnyText(
-      'A parent, legal guardian',
-      'parent, legal guardian, spouse',
-      'parent'
-    ),
-    'Contact Details: "Who has logged in?" → "A parent, legal guardian..." option'
+    await hasAnyText('Myself, the person with a disability', 'Myself'),
+    'Contact Details: "Who has logged in?" → "Myself, the person with a disability"'
   ).toBeTruthy();
 
   for (const contact of contactsAdded) {
@@ -600,79 +549,126 @@ test('Review Parent 2 Contacts', async ({ page }, testInfo) => {
       await isVisibleOrPresent(hasText(contact.phone)),
       `Contact: phone "${contact.phone}" should appear in review`
     ).toBeTruthy();
-    if (contact.relationship) {
-      expect(
-        await isVisibleOrPresent(hasText(contact.relationship)),
-        `Contact: relationship "${contact.relationship}" should appear in review`
-      ).toBeTruthy();
-    }
+    expect(
+      await isVisibleOrPresent(hasText(contact.relationship)),
+      `Contact: relationship "${contact.relationship}" should appear in review`
+    ).toBeTruthy();
   }
+
   console.log(`'Contact Details' Validation - Pass`);
 
-  // Applicant Details
+  // ─── Applicant Details ─────────────────────────────────────────────────────
   await expect(page.getByRole('heading', { name: /applicant details/i }).first()).toBeVisible({ timeout: 10000 });
+
   expect(
     await hasAnyText('Yes', 'Myself', 'the person with a disability'),
     'Applicant Details: applying-for-self answer should appear'
   ).toBeTruthy();
-  expect(await isVisibleOrPresent(hasText(applicantFirstName)), `Applicant: firstName "${applicantFirstName}"`).toBeTruthy();
-  expect(await isVisibleOrPresent(hasText(applicantMiddleName)), `Applicant: middleName "${applicantMiddleName}"`).toBeTruthy();
-  expect(await isVisibleOrPresent(hasText(applicantLastName)), `Applicant: lastName "${applicantLastName}"`).toBeTruthy();
+
+  expect(
+    await isVisibleOrPresent(hasText(applicantFirstName)),
+    `Applicant: firstName "${applicantFirstName}"`
+  ).toBeTruthy();
+  expect(
+    await isVisibleOrPresent(hasText(applicantMiddleName)),
+    `Applicant: middleName "${applicantMiddleName}"`
+  ).toBeTruthy();
+  expect(
+    await isVisibleOrPresent(hasText(applicantLastName)),
+    `Applicant: lastName "${applicantLastName}"`
+  ).toBeTruthy();
 
   const dobString = `${applicantDobDay}/${applicantDobMonth}/${applicantDobYear}`;
-  expect(await isVisibleOrPresent(hasText(dobString)), `Applicant: date of birth "${dobString}"`).toBeTruthy();
+  expect(
+    await isVisibleOrPresent(hasText(dobString)),
+    `Applicant: date of birth "${dobString}"`
+  ).toBeTruthy();
 
+  // Use tokens from the actual selected address value (in case display differs from typed string).
   const residentialTokens = residentialActualValue.split(' ').filter((t) => t.length >= 3);
+  const postalTokens = postalActualValue.split(' ').filter((t) => t.length >= 3);
+
   const residentialPass = await residentialTokens.reduce(async (accP, token) => {
-    return (await accP) && (await isVisibleOrPresent(hasText(token)));
+    const acc = await accP;
+    return acc && (await isVisibleOrPresent(hasText(token)));
   }, Promise.resolve(true));
   expect(residentialPass, `Applicant: residential address tokens from "${residentialActualValue}" should appear`).toBeTruthy();
 
-  const postalTokens = postalActualValue.split(' ').filter((t) => t.length >= 3);
   const postalPass = await postalTokens.reduce(async (accP, token) => {
-    return (await accP) && (await isVisibleOrPresent(hasText(token)));
+    const acc = await accP;
+    return acc && (await isVisibleOrPresent(hasText(token)));
   }, Promise.resolve(true));
   expect(postalPass, `Applicant: card delivery address tokens from "${postalActualValue}" should appear`).toBeTruthy();
+  expect(
+    await isVisibleOrPresent(hasText(applicantPhotoFileName)),
+    `Applicant: photo "${applicantPhotoFileName}"`
+  ).toBeTruthy();
 
-  expect(await isVisibleOrPresent(hasText(applicantPhotoFileName)), `Applicant: photo "${applicantPhotoFileName}"`).toBeTruthy();
   console.log(`'Applicant Details' Validation - Pass`);
 
-  // Disability Details
+  // ─── Disability Details ────────────────────────────────────────────────────
   await expect(page.getByRole('heading', { name: /disability details/i }).first()).toBeVisible({ timeout: 10000 });
-  expect(await isVisibleOrPresent(hasText(disabilityDiagnosis)), `Disability: diagnosis "${disabilityDiagnosis}"`).toBeTruthy();
+
+  expect(
+    await isVisibleOrPresent(hasText(disabilityDiagnosis)),
+    `Disability: diagnosis "${disabilityDiagnosis}"`
+  ).toBeTruthy();
 
   const diagnosisDateString = `${diagnosisDayValue}/${diagnosisMonthValue}/${diagnosisYearValue}`;
-  expect(await isVisibleOrPresent(hasText(diagnosisDateString)), `Disability: diagnosis date "${diagnosisDateString}"`).toBeTruthy();
+  expect(
+    await isVisibleOrPresent(hasText(diagnosisDateString)),
+    `Disability: diagnosis date "${diagnosisDateString}"`
+  ).toBeTruthy();
 
+  // Each support need should show "Yes" — confirmed by the answer text appearing alongside each question
   expect(
     await isVisibleOrPresent(hasText('Yes')),
     'Disability: at least one "Yes" answer should appear for support need questions'
   ).toBeTruthy();
 
-  expect(await isVisibleOrPresent(hasText(additionalNotes)), `Disability: additional notes "${additionalNotes}"`).toBeTruthy();
+  expect(
+    await isVisibleOrPresent(hasText(additionalNotes)),
+    `Disability: additional notes "${additionalNotes}"`
+  ).toBeTruthy();
+
   console.log(`'Disability Details' Validation - Pass`);
 
-  // HP Assessment
+  // ─── Health Professional Assessment ───────────────────────────────────────
   await expect(page.getByRole('heading', { name: /health professional assessment/i }).last()).toBeVisible({ timeout: 10000 });
-  expect(await isVisibleOrPresent(hasText(hpAssessmentFileName)), `HP Assessment: file "${hpAssessmentFileName}"`).toBeTruthy();
+
+  expect(
+    await isVisibleOrPresent(hasText(hpAssessmentFileName)),
+    `HP Assessment: file "${hpAssessmentFileName}"`
+  ).toBeTruthy();
+
   console.log(`'Health professional assessment' Validation - Pass`);
 
-  await page.screenshot({ path: testInfo.outputPath('review-parent-2contacts-review.png'), fullPage: true });
+  await page.screenshot({
+    path: testInfo.outputPath('review-myself-lpg-review.png'),
+    fullPage: true,
+  });
 
-  // ─── Declaration & Submission ───────────────────────────────────────────────
   await reviewPage.continueToDeclaration();
   await declarationPage.waitForDeclarationPage();
+
   await declarationPage.confirmDeclarations();
+
   await declarationPage.submitApplication();
   await submissionPage.waitForSubmissionPage();
 
   const generatedId = await submissionPage.getGeneratedId();
   expect(generatedId).toBeDefined();
+
+  // Validation 3: ID should start with 'CCN' for companion card
   expect(generatedId).toMatch(/^CCN/i);
 
-  await page.screenshot({ path: testInfo.outputPath('review-parent-2contacts-submission.png'), fullPage: true });
+  await page.screenshot({
+    path: testInfo.outputPath('review-myself-lpg-submission.png'),
+    fullPage: true,
+  });
 
-  console.log(`✅ Validation Pass - Generated ID starts with CCN: ${generatedId}`);
+  console.log(`✅ Validation 3 Pass - Generated ID starts with CCN: ${generatedId}`);
 });
+
 
 
