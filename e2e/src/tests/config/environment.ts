@@ -20,11 +20,12 @@ export const environment = {
   // Test Runner configuration
   TEST_RUNNER_ENV: process.env.E2E_TEST_RUNNER_ENV || 'preprod',
   TEST_RUNNER_CLIENT_ID: process.env.E2E_TEST_RUNNER_CLIENT_ID || 'test-runner-ccms',
-  TEST_RUNNER_CLIENT_SECRET: process.env.E2E_TEST_RUNNER_CLIENT_SECRET || '',
+  TEST_RUNNER_CLIENT_SECRET: process.env.E2E_TEST_RUNNER_CLIENT_SECRET || 'sH3NEcFphTjO9XJTJi6MNpVT8TxjiKV0',
   TEST_USER_IDS: process.env.E2E_TEST_USER_IDS || '1',
-  TEST_RUNNER_PASSWORD: process.env.E2E_TEST_RUNNER_PASSWORD || '',
-  SUBSCRIBER_CLIENT_ID: process.env.E2E_SUBSCRIBER_CLIENT_ID || '',
-  SUBSCRIBER_CLIENT_SECRET: process.env.E2E_SUBSCRIBER_CLIENT_SECRET || '',
+  TEST_RUNNER_PASSWORD: process.env.E2E_TEST_RUNNER_PASSWORD || 'effebf0c-5d45-11ec-a4eb-67627a722133',
+  SUBSCRIBER_CLIENT_ID: process.env.E2E_SUBSCRIBER_CLIENT_ID || 'app-queenslandonline-cardsandconcessions-subscriber-PREPROD-1750631735627',
+  SUBSCRIBER_CLIENT_SECRET: process.env.E2E_SUBSCRIBER_CLIENT_SECRET || 'cDODlqUVPC2pn5H1Xn0pf4X0gDxjx2mK',
+  QDI_PASSWORD: process.env.E2E_QDI_PASSWORD || '##Passw0rd!!',
 
   // Timeouts
   DEFAULT_WAIT_TIMEOUT: 30000,

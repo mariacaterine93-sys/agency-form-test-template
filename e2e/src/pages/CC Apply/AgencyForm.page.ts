@@ -2,8 +2,9 @@ import { expect, Locator, Page } from "@playwright/test";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
+import type { LoginProvider } from "../../tests/test-data/centralizedTestData";
+import environment from "../../tests/config/environment";
 
-// Import environment configuration from .env file
 const companionCardApplyUrl = process.env.DTP_ROOT_URL 
   ? `${process.env.DTP_ROOT_URL}/companioncardapply`
   : "https://forms.preprod.beta.my.qld.gov.au/companioncardapply";
@@ -20,21 +21,39 @@ export class AgencyFormPage {
     readonly page: Page;
     readonly beginButton: Locator;
     readonly continueWithMyIdButton: Locator;
+    readonly continueWithQdiButton: Locator;
     readonly selectMyIdButton: Locator;
+    readonly selectQdiButton: Locator;
     readonly myIdEmailTextBox: Locator;
+    readonly qdiEmailTextBox: Locator;
+    readonly qdiPasswordTextBox: Locator;
+    readonly qdiOneTimeCodeTextBox: Locator;
+    readonly genericContinueButton: Locator;
+    readonly remindMeLaterButton: Locator;
+    readonly cancelButton: Locator;
     readonly getCodeButton: Locator;
     readonly rememberConsentCheckBox: Locator;
     readonly consentButton: Locator;
     readonly saveAndContinueButton: Locator;
     private loadingIssueDetected = false;
     private lastMyIdEmail = "";
+    private lastLoginProvider: LoginProvider = "MYID";
+    private lastLoginEmail = "";
 
     constructor(page: Page) {
         this.page = page;
         this.beginButton = page.getByRole("button", { name: "Begin" });
         this.continueWithMyIdButton = page.getByRole("button", { name: "Continue with myID" });
+        this.continueWithQdiButton = page.getByRole("button", { name: /continue with qdi|continue with qgov ?id|continue with queensland/i });
         this.selectMyIdButton = page.getByRole("button", { name: "Select myID" });
+        this.selectQdiButton = page.getByRole("button", { name: /select qdi|select qgov ?id/i });
         this.myIdEmailTextBox = page.getByRole("textbox", { name: "myID email" });
+        this.qdiEmailTextBox = page.getByRole("textbox", { name: /email address|qdi email|qgov ?id email|email/i }).first();
+        this.qdiPasswordTextBox = page.getByRole("textbox", { name: /password/i }).first();
+        this.qdiOneTimeCodeTextBox = page.getByRole("textbox", { name: /one-?time code|enter your one-time code/i }).first();
+        this.genericContinueButton = page.getByRole("button", { name: /^continue$/i }).first();
+        this.remindMeLaterButton = page.getByRole("button", { name: /remind me later/i }).first();
+        this.cancelButton = page.getByRole("button", { name: /^cancel$/i }).first();
         this.getCodeButton = page.getByRole("button", { name: "Get code" });
         this.rememberConsentCheckBox = page.getByLabel(/yes,?\s*remember my consent/i);
         this.consentButton = page.getByRole("button", { name: /^Consent$/i });
@@ -99,6 +118,197 @@ export class AgencyFormPage {
         await this.myIdEmailTextBox.fill(emailAddress);
     }
 
+    async enterIdentityEmail(provider: LoginProvider, emailAddress: string) {
+        this.lastMyIdEmail = emailAddress;
+        this.lastLoginProvider = provider;
+        this.lastLoginEmail = emailAddress;
+        const emailBox = provider === "QDI" ? this.qdiEmailTextBox : this.myIdEmailTextBox;
+        await emailBox.waitFor({ state: "visible", timeout: 30000 });
+        await emailBox.fill(emailAddress);
+    }
+
+    private getRequiredEnv(variableName: string, context: string): string {
+        const value = process.env[variableName];
+        if (!value) {
+            throw new Error(`${context} requires ${variableName} to be set.`);
+        }
+        return value;
+    }
+
+    private getFirstDefinedEnv(...variableNames: string[]): string | undefined {
+        for (const variableName of variableNames) {
+            const value = process.env[variableName];
+            if (value) {
+                return value;
+            }
+        }
+        return undefined;
+    }
+
+    private getFirstDefinedEnvWithSource(...variableNames: string[]): { value: string; source: string } | undefined {
+        for (const variableName of variableNames) {
+            const value = process.env[variableName];
+            if (value) {
+                return { value, source: `env:${variableName}` };
+            }
+        }
+        return undefined;
+    }
+
+    private resolveQdiPassword(): string {
+        const fromEnv = this.getFirstDefinedEnvWithSource(
+            "E2E_QDI_PASSWORD",
+            "E2E_TEST_RUNNER_PASSWORD",
+            "E2E_SUBSCRIBER_CLIENT_SECRET"
+        );
+        const fromEnvironment =
+            environment.QDI_PASSWORD
+                ? { value: environment.QDI_PASSWORD, source: "environment:QDI_PASSWORD" }
+                : environment.TEST_RUNNER_PASSWORD
+                  ? { value: environment.TEST_RUNNER_PASSWORD, source: "environment:TEST_RUNNER_PASSWORD" }
+                  : environment.SUBSCRIBER_CLIENT_SECRET
+                    ? { value: environment.SUBSCRIBER_CLIENT_SECRET, source: "environment:SUBSCRIBER_CLIENT_SECRET" }
+                    : environment.TEST_RUNNER_CLIENT_SECRET
+                      ? { value: environment.TEST_RUNNER_CLIENT_SECRET, source: "environment:TEST_RUNNER_CLIENT_SECRET" }
+                      : undefined;
+
+        const resolved = fromEnv ?? fromEnvironment;
+        if (!resolved?.value) {
+            throw new Error(
+                "QDI password entry requires E2E_QDI_PASSWORD (or fallback E2E_TEST_RUNNER_PASSWORD / E2E_SUBSCRIBER_CLIENT_SECRET)."
+            );
+        }
+
+        console.log(`Resolved QDI password source: ${resolved.source}`);
+        return resolved.value;
+    }
+
+    private resolveQdiOneTimeCode(): string | undefined {
+        const fromEnv = this.getFirstDefinedEnvWithSource(
+            "E2E_QDI_OTP_CODE",
+            "E2E_SUBSCRIBER_CLIENT_SECRET",
+            "E2E_TEST_RUNNER_PASSWORD"
+        );
+        const fromEnvironment =
+            environment.SUBSCRIBER_CLIENT_SECRET
+                ? { value: environment.SUBSCRIBER_CLIENT_SECRET, source: "environment:SUBSCRIBER_CLIENT_SECRET" }
+                : environment.TEST_RUNNER_PASSWORD
+                  ? { value: environment.TEST_RUNNER_PASSWORD, source: "environment:TEST_RUNNER_PASSWORD" }
+                  : environment.TEST_RUNNER_CLIENT_SECRET
+                    ? { value: environment.TEST_RUNNER_CLIENT_SECRET, source: "environment:TEST_RUNNER_CLIENT_SECRET" }
+                    : undefined;
+
+        const resolved = fromEnv ?? fromEnvironment;
+        if (resolved?.value) {
+            console.log(`Resolved QDI OTP bypass token source: ${resolved.source}`);
+        } else {
+            console.log("No QDI OTP bypass token was resolved.");
+        }
+        return resolved?.value;
+    }
+
+    private async fetchQdiOtp(): Promise<string> {
+        // QDI preprod test accounts can bypass OTP by using configured secrets directly.
+        const otpBypassToken = this.resolveQdiOneTimeCode();
+        if (!otpBypassToken) {
+            throw new Error("Unable to resolve QDI OTP bypass token from environment configuration.");
+        }
+
+        console.log("Using QDI OTP bypass token from configured secrets.");
+        return otpBypassToken;
+    }
+
+    private async clickIfVisible(locator: Locator, timeoutMs: number): Promise<boolean> {
+        const visible = await locator.isVisible({ timeout: timeoutMs }).catch(() => false);
+        if (!visible) {
+            return false;
+        }
+
+        await locator.click();
+        return true;
+    }
+
+    private async completeQdiFlowIfRequired() {
+        console.log("Starting QDI login flow...");
+
+        const hasPassword = await this.qdiPasswordTextBox.isVisible({ timeout: 5000 }).catch(() => false);
+        console.log("Password field visible:", hasPassword);
+        if (hasPassword) {
+            const qdiPassword = this.resolveQdiPassword();
+            console.log("Filling password...");
+            await this.qdiPasswordTextBox.fill(qdiPassword, { timeout: 2000 });
+            const clickedContinue = await this.clickIfVisible(this.genericContinueButton, 8000);
+            console.log("Clicked continue after password:", clickedContinue);
+            if (!clickedContinue) {
+                await this.qdiPasswordTextBox.press("Enter").catch(() => {});
+            }
+            await this.page.waitForLoadState("domcontentloaded").catch(() => {});
+        }
+
+        let hasOtp = await this.qdiOneTimeCodeTextBox.isVisible({ timeout: 5000 }).catch(() => false);
+        console.log("OTP field visible:", hasOtp);
+        if (!hasOtp) {
+            const clickedGetCode = await this.clickIfVisible(this.getCodeButton, 3000);
+            if (clickedGetCode) {
+                console.log("Clicked 'Get code' while waiting for OTP challenge.");
+            }
+            hasOtp = await this.qdiOneTimeCodeTextBox.isVisible({ timeout: 6000 }).catch(() => false);
+            console.log("OTP field visible after wait/retry:", hasOtp);
+        }
+
+        if (hasOtp) {
+            console.log("Bypassing OTP using client and subscriber secrets...");
+            const qdiOtp = await this.fetchQdiOtp();
+            if (qdiOtp) {
+                await this.qdiOneTimeCodeTextBox.fill(qdiOtp, { timeout: 2000 });
+                const clickedContinue = await this.clickIfVisible(this.genericContinueButton, 8000);
+                console.log("Clicked continue after OTP:", clickedContinue);
+                if (!clickedContinue) {
+                    await this.qdiOneTimeCodeTextBox.press("Enter").catch(() => {});
+                }
+                await this.page.waitForLoadState("domcontentloaded").catch(() => {});
+            } else {
+                console.log("No OTP required, proceeding...");
+            }
+        } else {
+            console.log(`QDI OTP challenge not shown. Continuing post-login handling. URL: ${this.page.url()}`);
+        }
+
+        console.log("Clicking 'Remind me later' button...");
+        await this.clickIfVisible(this.remindMeLaterButton, 5000);
+
+        for (let clickCount = 0; clickCount < 2; clickCount++) {
+            console.log(`Clicking 'Cancel' button, attempt ${clickCount + 1}...`);
+            const clickedCancel = await this.clickIfVisible(this.cancelButton, 2500);
+            console.log("Clicked cancel:", clickedCancel);
+            if (!clickedCancel) {
+                break;
+            }
+            await this.page.waitForLoadState("domcontentloaded").catch(() => {});
+        }
+
+        console.log("QDI login flow completed.");
+    }
+
+    private async waitForVisible(locator: Locator, timeoutMs: number): Promise<boolean> {
+        try {
+            await locator.waitFor({ state: "visible", timeout: timeoutMs });
+            return true;
+        } catch {
+            return false;
+        }
+    }
+
+    private async clickWhenVisible(locator: Locator, timeoutMs: number): Promise<boolean> {
+        const visible = await this.waitForVisible(locator, timeoutMs);
+        if (!visible) {
+            return false;
+        }
+
+        await locator.click();
+        return true;
+    }
+
     async consentIfRequired() {
         const hasGetCodeButton = await this.getCodeButton.isVisible({ timeout: 10000 }).catch(() => false);
         if (hasGetCodeButton) {
@@ -119,6 +329,68 @@ export class AgencyFormPage {
         }
     }
 
+    async loginWithIdentity(provider: LoginProvider, emailAddress: string, options?: { navigateFromEntry?: boolean }) {
+        const continueButton = provider === "QDI" ? this.continueWithQdiButton : this.continueWithMyIdButton;
+        const selectButton = provider === "QDI" ? this.selectQdiButton : this.selectMyIdButton;
+        const emailBox = provider === "QDI" ? this.qdiEmailTextBox : this.myIdEmailTextBox;
+        this.lastLoginProvider = provider;
+        this.lastLoginEmail = emailAddress;
+
+        if (options?.navigateFromEntry) {
+            await this.goToCompanionCardApply();
+            if (await this.beginButton.isVisible({ timeout: 10000 }).catch(() => false)) {
+                await this.beginApplication();
+            }
+        }
+
+        // Run one slow, deterministic pass through the identity gateway.
+        const clickedContinue = await this.clickWhenVisible(continueButton, 30000);
+        if (clickedContinue) {
+            await this.page.waitForLoadState("domcontentloaded").catch(() => {});
+            await this.page.waitForTimeout(1500);
+        }
+
+        const clickedSelect = await this.clickWhenVisible(selectButton, 30000);
+        if (clickedSelect) {
+            await this.page.waitForLoadState("domcontentloaded").catch(() => {});
+            await this.page.waitForTimeout(1500);
+        }
+
+        const emailVisible = await this.waitForVisible(emailBox, 45000);
+        if (!emailVisible) {
+            if (provider === "QDI") {
+                const qdiPasswordVisible = await this.qdiPasswordTextBox.isVisible({ timeout: 1000 }).catch(() => false);
+                const qdiOtpVisible = await this.qdiOneTimeCodeTextBox.isVisible({ timeout: 1000 }).catch(() => false);
+                const onQdiChallengeUrl = /mfa|oauth-prep\.tmr\.qld\.gov\.au/i.test(this.page.url());
+                const onCompanionCardRootUrl = /\/companioncardapply\/?$/i.test(this.page.url());
+                const continueVisible = await continueButton.isVisible({ timeout: 1000 }).catch(() => false);
+                const selectVisible = await selectButton.isVisible({ timeout: 1000 }).catch(() => false);
+
+                if (qdiPasswordVisible || qdiOtpVisible || onQdiChallengeUrl) {
+                    await this.completeQdiFlowIfRequired();
+                    await this.consentIfRequired();
+                    return;
+                }
+
+                if (onCompanionCardRootUrl && !continueVisible && !selectVisible) {
+                    console.log("QDI email step not visible, but provider controls are absent on companion card root. Assuming existing authenticated session.");
+                    await this.consentIfRequired();
+                    return;
+                }
+            }
+
+            throw new Error(
+                `Could not reach ${provider} email step after login selection actions. Current URL: ${this.page.url()}`
+            );
+        }
+
+        await this.enterIdentityEmail(provider, emailAddress);
+        if (provider === "QDI") {
+            await this.completeQdiFlowIfRequired();
+        }
+        await this.consentIfRequired();
+    }
+
     async navigateToAgencyFormIfNeeded() {
         await this.page.waitForLoadState("domcontentloaded").catch(() => {});
 
@@ -135,7 +407,7 @@ export class AgencyFormPage {
                 return;
             }
 
-            await this.resumeMyIdFlowIfVisible();
+            await this.resumeIdentityFlowIfVisible();
 
             const postResumeUrl = this.page.url();
             if (/companioncardapply\/agency-form/i.test(postResumeUrl)) {
@@ -155,7 +427,7 @@ export class AgencyFormPage {
             await this.page.goto(agencyFormUrl);
             await this.page.waitForLoadState("domcontentloaded").catch(() => {});
 
-            await this.resumeMyIdFlowIfVisible();
+            await this.resumeIdentityFlowIfVisible();
 
             const reachedBysHeading = await this.page
                 .getByRole("heading", { name: /before you start|what are you trying to do\?/i })
@@ -170,25 +442,33 @@ export class AgencyFormPage {
         throw new Error("Unable to reach Before You Start page after authentication retries.");
     }
 
-    private async resumeMyIdFlowIfVisible() {
+    private async resumeIdentityFlowIfVisible() {
+        const provider = this.lastLoginProvider;
         const loginHeading = this.page.getByRole("heading", { name: /login to continue/i });
         const loginToContinueVisible = await loginHeading.isVisible({ timeout: 5000 }).catch(() => false);
 
         if (loginToContinueVisible) {
-            const continueWithMyIdVisible = await this.continueWithMyIdButton.isVisible({ timeout: 5000 }).catch(() => false);
-            if (continueWithMyIdVisible) {
-                await this.continueWithMyIdButton.click();
+            const continueButton = provider === "QDI" ? this.continueWithQdiButton : this.continueWithMyIdButton;
+            const continueVisible = await continueButton.isVisible({ timeout: 5000 }).catch(() => false);
+            if (continueVisible) {
+                await continueButton.click();
             }
         }
 
-        const selectMyIdVisible = await this.selectMyIdButton.isVisible({ timeout: 5000 }).catch(() => false);
-        if (selectMyIdVisible) {
-            await this.selectMyIdButton.click();
+        const selectButton = provider === "QDI" ? this.selectQdiButton : this.selectMyIdButton;
+        const selectVisible = await selectButton.isVisible({ timeout: 5000 }).catch(() => false);
+        if (selectVisible) {
+            await selectButton.click();
         }
 
-        const emailVisible = await this.myIdEmailTextBox.isVisible({ timeout: 15000 }).catch(() => false);
-        if (emailVisible && this.lastMyIdEmail) {
-            await this.myIdEmailTextBox.fill(this.lastMyIdEmail);
+        const emailBox = provider === "QDI" ? this.qdiEmailTextBox : this.myIdEmailTextBox;
+        const emailVisible = await emailBox.isVisible({ timeout: 5000 }).catch(() => false);
+        if (emailVisible && this.lastLoginEmail) {
+            await emailBox.fill(this.lastLoginEmail);
+        }
+
+        if (provider === "QDI") {
+            await this.completeQdiFlowIfRequired();
         }
 
         await this.consentIfRequired();

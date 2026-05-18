@@ -5,6 +5,13 @@ export type CentralizedTestUser = {
   email: string;
 };
 
+export type LoginProvider = 'MYID' | 'QDI';
+
+export type LoginIdentity = {
+  provider: LoginProvider;
+  email: string;
+};
+
 // Source: screenshot-provided test data.
 export const screenshotTestUsers: CentralizedTestUser[] = [
   { firstName: 'MICHAEL', lastName: 'BLACK', dob: '1/10/1935', email: 'michael.black@fake.com.au' },
@@ -40,11 +47,28 @@ const emailBySpecFile: Record<string, string> = {
   'ApplicantMyselfMandatoryCheck.spec.ts': 'michael.black@fake.com.au',
   'ApplicantParentMandatoryCheck.spec.ts': 'debra.ward@fake.com.au',
   'MyselfApplicant.spec.ts': 'michael.west@fake.com.au',
-  'ParentApplicant.spec.ts': 'amanda.evans@fake.com.au',
+  'ParentApplicant.spec.ts': 'ictassurance+qdi20@smartservice.qld.gov.au',
   'DisabilityMandatoryCheck.spec.ts': 'amanda.morrison@fake.com.au',
   'HPMandatoryCheck.spec.ts': 'david.pearson@fake.com.au',
   'ReviewParent2Contacts.spec.ts': 'IndustryRDTI27@test.gov.au',
   'ReviewMyself2Contacts.spec.ts': 'IndustryRDTI28@test.gov.au',
+};
+
+const qdiIp2EmailBySpecFile: Record<string, string> = {
+  'MyselfContact1.spec.ts': 'ictassurance+qdi11@smartservice.qld.gov.au',
+};
+
+const getQdiIp2Email = (accountNumber: number): string => {
+  return `ictassurance+qdi${accountNumber}@smartservice.qld.gov.au`;
+};
+
+const parseProvider = (value?: string): LoginProvider | undefined => {
+  if (!value) return undefined;
+  const normalized = value.trim().toUpperCase();
+  if (normalized === 'MYID' || normalized === 'QDI') {
+    return normalized;
+  }
+  return undefined;
 };
 
 export const getMappedMyIdEmail = (specFileName: string): string | undefined => {
@@ -80,4 +104,36 @@ export const getMyIdEmail = (specFileName: string): string => {
 export const getMyIdUser = (specFileName: string): CentralizedTestUser | undefined => {
   const email = getMyIdEmail(specFileName).toLowerCase();
   return screenshotTestUsers.find((u) => u.email.toLowerCase() === email);
+};
+
+export const getLoginIdentityForSpec = (specFileName: string): LoginIdentity => {
+  const provider = parseProvider(process.env.E2E_LOGIN_PROVIDER) ?? 'MYID';
+
+  if (process.env.E2E_LOGIN_EMAIL) {
+    return { provider, email: process.env.E2E_LOGIN_EMAIL };
+  }
+
+  if (provider === 'QDI') {
+    const mappedQdiEmail = qdiIp2EmailBySpecFile[specFileName];
+    if (mappedQdiEmail) {
+      return { provider, email: mappedQdiEmail };
+    }
+
+    const qdiIp2Account = Number.parseInt(process.env.E2E_QDI_IP2_ACCOUNT ?? '', 10);
+    if (Number.isInteger(qdiIp2Account) && qdiIp2Account >= 11 && qdiIp2Account <= 20) {
+      return { provider, email: getQdiIp2Email(qdiIp2Account) };
+    }
+
+    // Fall back to general email mapping for QDI if available
+    const mappedEmail = getMappedMyIdEmail(specFileName);
+    if (mappedEmail) {
+      return { provider, email: mappedEmail };
+    }
+
+    throw new Error(
+      `No QDI IP2 email is mapped for spec: ${specFileName}. Set E2E_LOGIN_EMAIL or E2E_QDI_IP2_ACCOUNT (11-20).`
+    );
+  }
+
+  return { provider, email: getMyIdEmail(specFileName) };
 };
