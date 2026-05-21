@@ -305,11 +305,16 @@ test('Parent Contacts FO', async ({ page }, testInfo) => {
     failValidation(6);
   }
 
-  // Screenshot of Contact Details screen.
-  await page.screenshot({
-    path: testInfo.outputPath('parent-contacts-fo-contact-details.png'),
-    fullPage: true,
-  });
+
+  // Unique timestamped screenshot of Contact Details screen.
+  const path = require('path');
+  const fs = require('fs');
+  const screenshotDir = path.resolve(__dirname, '../../../../test-results');
+  if (!fs.existsSync(screenshotDir)) fs.mkdirSync(screenshotDir, { recursive: true });
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const screenshotPath = path.join(screenshotDir, `ParentContactsFO_ContactDetails_${timestamp}.png`);
+  await page.screenshot({ path: screenshotPath, fullPage: true });
+  console.log('Parent Contacts FO Contact Details screenshot saved at: ' + screenshotPath);
 
   // Continue and Validation 7: Must proceed to Applicant details.
   await handleDraftFailedModal();

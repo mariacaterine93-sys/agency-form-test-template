@@ -2,6 +2,7 @@ import { test, expect } from '@playwright/test';
 import { AgencyFormPage } from '../../../pages/CC Apply/AgencyForm.page';
 import { BeforeYouStartPage } from '../../../pages/CC Apply/BeforeYouStart.page';
 import { getLoginIdentityForSpec } from '../../test-data/centralizedTestData';
+import { environment } from '../../config/environment';
 
 /**
  * BYS Mandatory Check
@@ -17,7 +18,7 @@ test('BYS: mandatory selection required before proceeding', async ({ page }, tes
 
   const loginIdentity = getLoginIdentityForSpec('BYSMandatoryCheck.spec.ts');
   const loginEmail = loginIdentity.email;
-  const agencyFormUrl = `${process.env.DTP_ROOT_URL ?? 'https://forms.preprod.beta.my.qld.gov.au'}/companioncardapply/agency-form`;
+  const agencyFormUrl = `${environment.DTP_ROOT_URL || 'https://forms.preprod.beta.my.qld.gov.au'}/companioncardapply/agency-form`;
 
   const handleDraftFailedModal = async (): Promise<boolean> => {
     const draftFailedHeading = page.getByRole('heading', { name: /draft.*failed|failed.*draft/i });
@@ -60,21 +61,11 @@ test('BYS: mandatory selection required before proceeding', async ({ page }, tes
 
     await agencyFormPage.loginWithIdentity(loginIdentity.provider, loginEmail);
 
-    try {
-      await agencyFormPage.ensureNoLoadingError().catch(() => {});
-      const reachedBysAfterLogin = await waitForBysOrDraft(180000);
-      if (reachedBysAfterLogin) {
-        return true;
-      }
-
-      await page.goto(agencyFormUrl, { waitUntil: 'domcontentloaded' }).catch(() => {});
-      await agencyFormPage.ensureNoLoadingError().catch(() => {});
-      return await waitForBysOrDraft(15000);
-    } catch {
-      await page.goto(agencyFormUrl, { waitUntil: 'domcontentloaded' }).catch(() => {});
-      await agencyFormPage.ensureNoLoadingError().catch(() => {});
-      return await waitForBysOrDraft(15000);
-    }
+    // After login+consent, the app may land on the root companioncardapply URL.
+    // Navigate directly to agency-form to avoid polling indefinitely on the wrong page.
+    await page.goto(agencyFormUrl, { waitUntil: 'domcontentloaded' }).catch(() => {});
+    await agencyFormPage.ensureNoLoadingError().catch(() => {});
+    return await waitForBysOrDraft(30000);
   };
 
   const ensureBysWithFreshMyIdLogin = async () => {
@@ -149,10 +140,6 @@ test('BYS: mandatory selection required before proceeding', async ({ page }, tes
       testInfo.annotations.push({ type: 'result', description: 'Test Pass - Conditions are met' });
       console.log('✅ Test Pass - Conditions are met');
     } catch {
-      await page.screenshot({
-        path: testInfo.outputPath('screenshots/bys-error-message-screen.png'),
-        fullPage: true,
-      });
       throw new Error('Test Fail - Conditions are not met');
     }
   };
@@ -172,10 +159,15 @@ test('BYS: mandatory selection required before proceeding', async ({ page }, tes
     }
   }
 
-  await page.screenshot({
-    path: testInfo.outputPath('screenshots/bys-final-screen.png'),
-    fullPage: true,
-  });
+  // --- Unique timestamped screenshot at end of test, after all BYS validation errors are visible ---
+  const path = require('path');
+  const fs = require('fs');
+  const screenshotDir = path.resolve(__dirname, '../../../../test-results');
+  if (!fs.existsSync(screenshotDir)) fs.mkdirSync(screenshotDir, { recursive: true });
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const screenshotPath = path.join(screenshotDir, `BYSMandatoryCheck_ValidationErrors_${timestamp}.png`);
+  await page.screenshot({ path: screenshotPath, fullPage: true });
+  console.log('BYS validation errors screenshot saved at: ' + screenshotPath);
 });
 
 

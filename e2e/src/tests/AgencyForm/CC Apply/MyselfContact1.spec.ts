@@ -2,6 +2,7 @@ import { test, expect, Locator, Page } from '@playwright/test';
 import { AgencyFormPage } from '../../../pages/CC Apply/AgencyForm.page';
 import { BeforeYouStartPage } from '../../../pages/CC Apply/BeforeYouStart.page';
 import { getLoginIdentityForSpec } from '../../test-data/centralizedTestData';
+import { environment } from '../../config/environment';
 
 const failValidation = (num: number): never => {
   throw new Error(`Validation ${num} - Fail`);
@@ -61,7 +62,7 @@ test('Myself Contact1', async ({ page }, testInfo) => {
   const contactDetailsHeading = page.getByRole('heading', { name: /contact details/i });
   const loginIdentity = getLoginIdentityForSpec('MyselfContact1.spec.ts');
   const loginEmail = loginIdentity.email;
-  const agencyFormUrl = `${process.env.DTP_ROOT_URL || 'https://forms.preprod.beta.my.qld.gov.au'}/companioncardapply/agency-form`;
+  const agencyFormUrl = `${environment.DTP_ROOT_URL || 'https://forms.preprod.beta.my.qld.gov.au'}/companioncardapply/agency-form`;
 
   const handleDraftFailedModal = async () => {
     const draftFailedHeading = page.getByRole('heading', { name: /your draft failed to load/i });
@@ -312,11 +313,16 @@ test('Myself Contact1', async ({ page }, testInfo) => {
     failValidation(5);
   }
 
-  // Screenshot of Contact Details screen.
-  await page.screenshot({
-    path: testInfo.outputPath('myself-contact1-contact-details.png'),
-    fullPage: true,
-  });
+
+  // Unique timestamped screenshot of Contact Details screen.
+  const path = require('path');
+  const fs = require('fs');
+  const screenshotDir = path.resolve(__dirname, '../../../../test-results');
+  if (!fs.existsSync(screenshotDir)) fs.mkdirSync(screenshotDir, { recursive: true });
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const screenshotPath = path.join(screenshotDir, `MyselfContact1_ContactDetails_${timestamp}.png`);
+  await page.screenshot({ path: screenshotPath, fullPage: true });
+  console.log('Myself Contact1 Contact Details screenshot saved at: ' + screenshotPath);
 
   // Continue and Validation 6: Must proceed to Applicant details.
   await agencyFormPage.clickSaveAndContinue();

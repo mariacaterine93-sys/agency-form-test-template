@@ -1,4 +1,6 @@
 import { test, expect, Locator, Page } from '@playwright/test';
+import fs from 'fs';
+import path from 'path';
 import { AgencyFormPage } from '../../../pages/CC Apply/AgencyForm.page';
 import { BeforeYouStartPage } from '../../../pages/CC Apply/BeforeYouStart.page';
 import { getLoginIdentityForSpec } from '../../test-data/centralizedTestData';
@@ -102,7 +104,8 @@ test('Parent Applicant', async ({ page }) => {
   const loginIdentity = getLoginIdentityForSpec('ParentApplicant.spec.ts');
   const loginEmail = loginIdentity.email;
   const agencyFormUrl = `${process.env.DTP_ROOT_URL || 'https://forms.preprod.beta.my.qld.gov.au'}/companioncardapply/agency-form`;
-  const uploadPngPath = 'C:/PlaywrightTS/repo-doc-images/image1.png';
+  // Use the image from the test-data/repo-doc-images folder relative to the project root
+  const uploadPngPath = path.resolve(__dirname, '../../test-data/repo-doc-images/image1.png');
 
   const handleDraftFailedModal = async () => {
     const draftFailedHeading = page.getByRole('heading', { name: /your draft failed to load/i });
@@ -303,13 +306,15 @@ test('Parent Applicant', async ({ page }) => {
   }
   await expect(whereSendCombobox).toHaveValue(/18 MIAMI ST/i, { timeout: 15000 });
 
+
+  // Use robust file upload logic (same as MyselfApplicant.spec.ts)
   const browseFilesButton = page.getByRole('button', { name: /browse files/i }).first();
   await expect(browseFilesButton).toBeVisible({ timeout: 15000 });
-  const [fileChooser] = await Promise.all([
-    page.waitForEvent('filechooser'),
-    browseFilesButton.click()
-  ]);
-  await fileChooser.setFiles(uploadPngPath);
+  await browseFilesButton.click();
+  // Wait for the file input to be attached to the DOM after clicking
+  const fileInput = page.locator('input[type="file"]');
+  await fileInput.waitFor({ state: 'attached', timeout: 5000 });
+  await fileInput.setInputFiles(uploadPngPath);
 
   await expect(page.getByRole('button', { name: /image1\.png/i }).first()).toBeVisible({ timeout: 20000 });
   await expect(page.getByText(/upload complete/i).first()).toBeVisible({ timeout: 20000 });
@@ -319,8 +324,54 @@ test('Parent Applicant', async ({ page }) => {
     .first();
   await verificationCheckbox.check().catch(async () => verificationCheckbox.click());
 
-  await agencyFormPage.clickSaveAndContinue();
+  // Screenshot logic: unique timestamped screenshot after validation errors or on success
+  const submitApplicantDetails = async () => {
+    await agencyFormPage.clickSaveAndContinue();
+
+    const errorBannerHeading = page.getByRole('heading', { name: /please review the following errors/i }).first();
+    const reachedDisabilityDetails = await disabilityDetailsHeading.isVisible({ timeout: 15000 }).catch(() => false);
+    if (reachedDisabilityDetails) {
+      return;
+    }
+
+    const hasErrorBanner = await errorBannerHeading.isVisible({ timeout: 2000 }).catch(() => false);
+    if (!hasErrorBanner) {
+      return;
+    }
+
+    // If validation errors, throw to trigger screenshot logic
+    const bannerText = await errorBannerHeading.locator('xpath=..').innerText().catch(() => 'Validation error banner displayed.');
+    throw new Error(`Applicant details did not submit. ${bannerText.replace(/\s+/g, ' ').trim()}`);
+  };
+
+  // Save and Continue with screenshot logic
+  try {
+    await submitApplicantDetails();
+  } catch (error) {
+    // After validation errors appear, take a unique screenshot
+    const screenshotsDir = path.resolve('e2e-results', 'screenshots');
+    if (!fs.existsSync(screenshotsDir)) {
+      fs.mkdirSync(screenshotsDir, { recursive: true });
+    }
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const screenshotPath = path.join(screenshotsDir, `ParentApplicant-validation-error-${timestamp}.png`);
+    await page.screenshot({ path: screenshotPath, fullPage: true });
+    console.log(`📸 Screenshot taken: ${screenshotPath}`);
+    throw error; // rethrow to fail the test as intended
+  }
+
+  // Disability details should be shown.
   await expect(disabilityDetailsHeading).toBeVisible({ timeout: 60000 });
+
+  // Take a unique screenshot after all validation errors (if any) and successful navigation
+  const screenshotsDir = path.resolve('e2e-results', 'screenshots');
+  if (!fs.existsSync(screenshotsDir)) {
+    fs.mkdirSync(screenshotsDir, { recursive: true });
+  }
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const screenshotPath = path.join(screenshotsDir, `ParentApplicant-success-${timestamp}.png`);
+  await page.screenshot({ path: screenshotPath, fullPage: true });
+  console.log(`📸 Screenshot taken: ${screenshotPath}`);
 
   console.log('✅ Test Pass - Disability details screen is displayed');
 });

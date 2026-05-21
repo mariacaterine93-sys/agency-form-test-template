@@ -198,11 +198,16 @@ test('Applicant NS', async ({ page }, testInfo) => {
   const bannerText = page.getByText(/the companion card is only available to queensland permanent residents who live in queensland for more than 6 months of the year/i);
   await expect(bannerText).toBeVisible({ timeout: 5000 });
 
-  // Screenshot at the end.
-  await page.screenshot({
-    path: testInfo.outputPath('applicant-ns-error-banner.png'),
-    fullPage: true,
-  });
+
+  // Unique timestamped screenshot at the end.
+  const path = require('path');
+  const fs = require('fs');
+  const screenshotDir = path.resolve(__dirname, '../../../../test-results');
+  if (!fs.existsSync(screenshotDir)) fs.mkdirSync(screenshotDir, { recursive: true });
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const screenshotPath = path.join(screenshotDir, `ApplicantNS_ErrorBanner_${timestamp}.png`);
+  await page.screenshot({ path: screenshotPath, fullPage: true });
+  console.log('Applicant NS error banner screenshot saved at: ' + screenshotPath);
 
   console.log('✅ Test Pass - Conditions are met');
 });

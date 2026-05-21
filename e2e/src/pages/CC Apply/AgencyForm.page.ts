@@ -33,6 +33,7 @@ export class AgencyFormPage {
     readonly cancelButton: Locator;
     readonly getCodeButton: Locator;
     readonly rememberConsentCheckBox: Locator;
+    readonly shareDetailsConsentCheckBox: Locator;
     readonly consentButton: Locator;
     readonly saveAndContinueButton: Locator;
     private loadingIssueDetected = false;
@@ -56,6 +57,7 @@ export class AgencyFormPage {
         this.cancelButton = page.getByRole("button", { name: /^cancel$/i }).first();
         this.getCodeButton = page.getByRole("button", { name: "Get code" });
         this.rememberConsentCheckBox = page.getByLabel(/yes,?\s*remember my consent/i);
+        this.shareDetailsConsentCheckBox = page.getByLabel(/i consent to shar(?:e|ing) these details/i);
         this.consentButton = page.getByRole("button", { name: /^Consent$/i });
         this.saveAndContinueButton = page.getByRole("button", { name: "Save and continue" });
 
@@ -309,23 +311,115 @@ export class AgencyFormPage {
         return true;
     }
 
+    private async checkConsentCheckboxIfVisible(): Promise<boolean> {
+        console.log("[CONSENT] checkConsentCheckboxIfVisible() starting...");
+
+        // 1. Click the label element directly — handles Angular Material and similar
+        //    hidden-input patterns where isVisible() returns false on the <input>
+        const consentLabelCandidates: Locator[] = [
+            this.page.locator('label').filter({ hasText: /i consent to shar/i }).first(),
+            this.page.locator('label').filter({ hasText: /yes,?\s*remember my consent/i }).first(),
+            this.page.getByText(/i consent to shar(?:e|ing) these details/i).first(),
+            this.page.getByText(/yes,?\s*remember my consent/i).first(),
+        ];
+
+        for (let i = 0; i < consentLabelCandidates.length; i++) {
+            const label = consentLabelCandidates[i];
+            const visible = await label.isVisible({ timeout: 2000 }).catch(() => false);
+            console.log(`[CONSENT] Label candidate ${i} visible:`, visible);
+            if (!visible) continue;
+
+            console.log(`[CONSENT] Clicking label candidate ${i}...`);
+            await label.click({ force: true }).catch(() => {});
+            await this.page.waitForTimeout(500);
+
+            // Check if any checkbox became checked after label click
+            const anyChecked = await this.page.evaluate(() =>
+                document.querySelectorAll('input[type="checkbox"]:checked').length > 0
+            ).catch(() => false);
+            console.log(`[CONSENT] Any checkbox checked after label click:`, anyChecked);
+            if (anyChecked) return true;
+        }
+
+        // 2. Force-check the hidden input directly (bypasses visibility restriction)
+        const hiddenInputCandidates: Locator[] = [
+            this.rememberConsentCheckBox,
+            this.shareDetailsConsentCheckBox,
+            this.page.locator('input[type="checkbox"]').first(),
+        ];
+
+        for (let i = 0; i < hiddenInputCandidates.length; i++) {
+            const cb = hiddenInputCandidates[i];
+            const exists = await cb.count().then(c => c > 0).catch(() => false);
+            console.log(`[CONSENT] Hidden input candidate ${i} exists:`, exists);
+            if (!exists) continue;
+
+            await cb.check({ force: true }).catch(() =>
+                cb.click({ force: true }).catch(() => {})
+            );
+            await this.page.waitForTimeout(500);
+
+            const checked = await cb.isChecked().catch(() => false);
+            console.log(`[CONSENT] Hidden input candidate ${i} checked:`, checked);
+            if (checked) return true;
+        }
+
+        console.log("[CONSENT] No checkbox could be successfully checked.");
+        return false;
+    }
+
     async consentIfRequired() {
-        const hasGetCodeButton = await this.getCodeButton.isVisible({ timeout: 10000 }).catch(() => false);
-        if (hasGetCodeButton) {
-            await this.getCodeButton.click();
+        console.log("[CONSENT] consentIfRequired() started. URL:", this.page.url());
+
+        // Wait for the SPA to finish rendering the consent form before querying elements
+        await this.page.waitForLoadState("networkidle", { timeout: 15000 }).catch(() => {});
+        console.log("[CONSENT] Page settled. URL:", this.page.url());
+
+        // Wait for either a Consent button or a Continue button to appear,
+        // which signals the consent form is rendered and ready to interact with
+        const consentOrContinue = await Promise.race([
+            this.consentButton.waitFor({ state: "visible", timeout: 25000 }).then(() => "consent").catch(() => null),
+            this.genericContinueButton.waitFor({ state: "visible", timeout: 25000 }).then(() => "continue").catch(() => null),
+        ]);
+        console.log("[CONSENT] Detected consent UI type:", consentOrContinue);
+
+        if (!consentOrContinue) {
+            console.log("[CONSENT] No consent-related UI detected. Assuming consent not required or already handled.");
+            return;
         }
 
-        const hasRememberConsent = await this.rememberConsentCheckBox.isVisible({ timeout: 10000 }).catch(() => false);
-        if (hasRememberConsent) {
-            await this.rememberConsentCheckBox.check();
+        // Check/click the consent checkbox (required before Continue is enabled)
+        await this.checkConsentCheckboxIfVisible();
+
+        if (consentOrContinue === "consent") {
+            console.log("[CONSENT] Clicking Consent button...");
+            await this.consentButton.click();
+            await this.page.waitForURL(/companioncardapply/i, { timeout: 30000 }).catch(() => {});
+            return;
         }
 
-        const hasConsentButton = await this.consentButton.isVisible({ timeout: 20000 }).catch(() => false);
-        if (hasConsentButton) {
-            await Promise.all([
-                this.page.waitForURL(/companioncardapply/i, { timeout: 90000 }).catch(() => {}),
-                this.consentButton.click(),
-            ]);
+        // Continue button path
+        let continueEnabled = await this.genericContinueButton.isEnabled().catch(() => false);
+        console.log("[CONSENT] Continue button enabled:", continueEnabled);
+        if (!continueEnabled) {
+            await this.checkConsentCheckboxIfVisible();
+            await this.page.waitForTimeout(1000);
+            continueEnabled = await this.genericContinueButton.isEnabled().catch(() => false);
+            console.log("[CONSENT] Continue button enabled after retry:", continueEnabled);
+        }
+        if (continueEnabled) {
+            console.log("[CONSENT] Clicking Continue button...");
+            await this.genericContinueButton.click();
+            await this.page.waitForURL(/companioncardapply/i, { timeout: 30000 }).catch(() => {});
+        } else {
+            // Last resort: try any visible button that isn't back/cancel
+            const anyProceedButton = this.page.locator('button').filter({ hasNotText: /back|cancel/i }).last();
+            const anyVisible = await anyProceedButton.isVisible({ timeout: 2000 }).catch(() => false);
+            if (anyVisible) {
+                console.log("[CONSENT] Clicking fallback proceed button...");
+                await anyProceedButton.click();
+                await this.page.waitForURL(/companioncardapply/i, { timeout: 30000 }).catch(() => {});
+            }
         }
     }
 
@@ -385,9 +479,8 @@ export class AgencyFormPage {
         }
 
         await this.enterIdentityEmail(provider, emailAddress);
-        if (provider === "QDI") {
-            await this.completeQdiFlowIfRequired();
-        }
+        // Both QDI and MYID require Get Code → OTP → Continue before reaching consent
+        await this.completeQdiFlowIfRequired();
         await this.consentIfRequired();
     }
 

@@ -1,4 +1,6 @@
 import { test, expect, Locator, Page } from '@playwright/test';
+import fs from 'fs';
+import path from 'path';
 import { AgencyFormPage } from '../../../pages/CC Apply/AgencyForm.page';
 import { BeforeYouStartPage } from '../../../pages/CC Apply/BeforeYouStart.page';
 import { getLoginIdentityForSpec } from '../../test-data/centralizedTestData';
@@ -91,7 +93,8 @@ test('Disability Mandatory Check', async ({ page }, testInfo) => {
   const loginIdentity = getLoginIdentityForSpec('DisabilityMandatoryCheck.spec.ts');
   const loginEmail = loginIdentity.email;
   const agencyFormUrl = `${process.env.DTP_ROOT_URL || 'https://forms.preprod.beta.my.qld.gov.au'}/companioncardapply/agency-form`;
-  const uploadPngPath = 'C:/PlaywrightTS/repo-doc-images/image1.png';
+  // Use the image from the test-data/repo-doc-images folder relative to the project root
+  const uploadPngPath = path.resolve(__dirname, '../../test-data/repo-doc-images/image1.png');
 
   const handleDraftFailedModal = async () => {
     const draftFailedHeading = page.getByRole('heading', { name: /your draft failed to load/i });
@@ -276,10 +279,14 @@ test('Disability Mandatory Check', async ({ page }, testInfo) => {
   await expect(whereSendOptions.first()).toBeVisible({ timeout: 10000 });
   await whereSendOptions.first().click({ force: true });
 
+  // Use robust file upload logic (same as MyselfApplicant.spec.ts)
   const browseFilesButton = page.getByRole('button', { name: /browse files/i }).first();
   await expect(browseFilesButton).toBeVisible({ timeout: 15000 });
-  const [fileChooser] = await Promise.all([page.waitForEvent('filechooser'), browseFilesButton.click()]);
-  await fileChooser.setFiles(uploadPngPath);
+  await browseFilesButton.click();
+  // Wait for the file input to be attached to the DOM after clicking
+  const fileInput = page.locator('input[type="file"]');
+  await fileInput.waitFor({ state: 'attached', timeout: 5000 });
+  await fileInput.setInputFiles(uploadPngPath);
 
   await expect(page.getByRole('button', { name: /image1\.png/i }).first()).toBeVisible({ timeout: 20000 });
   await expect(page.getByText(/upload complete/i).first()).toBeVisible({ timeout: 20000 });
@@ -350,10 +357,15 @@ test('Disability Mandatory Check', async ({ page }, testInfo) => {
 
   await expect(page.getByRole('link', { name: /optional/i }).first()).not.toBeVisible({ timeout: 2000 });
 
-  await page.screenshot({
-    path: testInfo.outputPath('disability-mandatory-check-errors.png'),
-    fullPage: true,
-  });
+  // Unique timestamped screenshot logic
+  const screenshotsDir = path.resolve('e2e-results', 'screenshots');
+  if (!fs.existsSync(screenshotsDir)) {
+    fs.mkdirSync(screenshotsDir, { recursive: true });
+  }
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const screenshotPath = path.join(screenshotsDir, `DisabilityMandatoryCheck-errors-${timestamp}.png`);
+  await page.screenshot({ path: screenshotPath, fullPage: true });
+  console.log(`📸 Screenshot taken: ${screenshotPath}`);
 
   console.log('✅ Test Pass - Disability mandatory validation banner/inline/red text verified and optional fields have no required errors');
 });

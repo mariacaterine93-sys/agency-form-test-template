@@ -263,11 +263,15 @@ test('Parent Contact Mandatory Check', async ({ page }, testInfo) => {
     await expect(locator).toHaveCSS('color', 'rgb(226, 35, 57)');
   }
 
-  // Step 8: Screenshot at the end.
-  await page.screenshot({
-    path: testInfo.outputPath('parent-contact-mandatory-check.png'),
-    fullPage: true,
-  });
+  // Step 8: Unique timestamped screenshot at the end.
+  const path = require('path');
+  const fs = require('fs');
+  const screenshotDir = path.resolve(__dirname, '../../../../test-results');
+  if (!fs.existsSync(screenshotDir)) fs.mkdirSync(screenshotDir, { recursive: true });
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const screenshotPath = path.join(screenshotDir, `ParentContactMandatoryCheck_ValidationErrors_${timestamp}.png`);
+  await page.screenshot({ path: screenshotPath, fullPage: true });
+  console.log('Parent Contact Mandatory Check validation errors screenshot saved at: ' + screenshotPath);
 
   console.log('✅ Test Pass - Conditions are met');
 });

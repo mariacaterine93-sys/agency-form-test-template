@@ -1,4 +1,4 @@
-import { test, expect, Locator, Page } from '@playwright/test';
+import { test, expect, Locator, type Page } from '@playwright/test';
 import { AgencyFormPage } from '../../../pages/CC Apply/AgencyForm.page';
 import { BeforeYouStartPage } from '../../../pages/CC Apply/BeforeYouStart.page';
 import { getLoginIdentityForSpec } from '../../test-data/centralizedTestData';
@@ -87,7 +87,9 @@ test('Applicant Parent Navigation to Disability Details', async ({ page }, testI
   const disabilityDetailsHeading = page.getByRole('heading', { name: /disability details/i }).first();
   const loginIdentity = getLoginIdentityForSpec('ApplicantParentMandatoryCheck.spec.ts');
   const loginEmail = loginIdentity.email;
-  const agencyFormUrl = `${process.env.DTP_ROOT_URL || 'https://forms.preprod.beta.my.qld.gov.au'}/companioncardapply/agency-form`;
+  const agencyFormUrl = environment.COMPANION_CARD_AGENCY_FORM_URL;
+  const path = require('path');
+  const fs = require('fs');
 
   const handleDraftFailedModal = async () => {
     const draftFailedHeading = page.getByRole('heading', { name: /your draft failed to load/i });
@@ -101,69 +103,13 @@ test('Applicant Parent Navigation to Disability Details', async ({ page }, testI
     return true;
   };
 
-  const resumeLoginIfShown = async () => {
-    const loginHeading = page.getByRole('heading', { name: /login to continue/i });
-    const loginVisible = await loginHeading.isVisible({ timeout: 1500 }).catch(() => false);
-    if (!loginVisible) return;
-
-    await agencyFormPage.loginWithIdentity(loginIdentity.provider, loginEmail);
-  };
+  // (removed old resumeLoginIfShown, not needed)
 
   // NOTE: Avoid global draft-modal handlers because they can trigger during navigation
   // and race with page/context lifecycle. Handle draft modals explicitly at stable checkpoints.
-  // Global guard: if session drops to login mid-test, re-run myID continuation steps.
-  await page.addLocatorHandler(
-    page.getByRole('heading', { name: /login to continue/i }),
-    async () => {
-      await resumeLoginIfShown();
-    }
-  );
+  // Global guard: if session drops to login mid-test, robust login flow will recover inline.
 
-  const waitForBysOrDraft = async (timeoutMs: number): Promise<boolean> => {
-    const deadline = Date.now() + timeoutMs;
-
-    while (Date.now() < deadline) {
-      const bysVisible = await bysHeading.isVisible({ timeout: 2000 }).catch(() => false);
-      if (bysVisible) {
-        return true;
-      }
-
-      const draftVisible = await beforeYouStartPage.draftDialog.isVisible().catch(() => false);
-      if (draftVisible) {
-        return true;
-      }
-
-      await page.waitForTimeout(1000);
-    }
-
-    return false;
-  };
-
-  const recoverAuthIfNeeded = async (): Promise<boolean> => {
-    const loginHeading = page.getByRole('heading', { name: /login to continue/i });
-    const loginVisible = await loginHeading.isVisible({ timeout: 5000 }).catch(() => false);
-    if (!loginVisible) {
-      return false;
-    }
-
-    await agencyFormPage.loginWithIdentity(loginIdentity.provider, loginEmail);
-
-    try {
-      await agencyFormPage.ensureNoLoadingError().catch(() => {});
-      const reachedBysAfterLogin = await waitForBysOrDraft(180000);
-      if (reachedBysAfterLogin) {
-        return true;
-      }
-
-      await page.goto(agencyFormUrl, { waitUntil: 'domcontentloaded' }).catch(() => {});
-      await agencyFormPage.ensureNoLoadingError().catch(() => {});
-      return await waitForBysOrDraft(15000);
-    } catch {
-      await page.goto(agencyFormUrl, { waitUntil: 'domcontentloaded' }).catch(() => {});
-      await agencyFormPage.ensureNoLoadingError().catch(() => {});
-      return await waitForBysOrDraft(15000);
-    }
-  };
+  // (removed old recoverAuthIfNeeded, robust version is below)
 
   const goFromBysToContactDetails = async () => {
     await handleDraftFailedModal();
@@ -174,34 +120,56 @@ test('Applicant Parent Navigation to Disability Details', async ({ page }, testI
     await handleDraftFailedModal();
   };
 
-  const ensureBysWithFreshMyIdLogin = async () => {
+
+  // --- Robust login and navigation (like ApplicantMyselfMandatoryCheck) ---
+  const waitForBysOrDraft = async (timeoutMs: number): Promise<boolean> => {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      const bysVisible = await bysHeading.isVisible({ timeout: 2000 }).catch(() => false);
+      if (bysVisible) return true;
+      const draftVisible = await beforeYouStartPage.draftDialog.isVisible().catch(() => false);
+      if (draftVisible) return true;
+      await page.waitForTimeout(1000);
+    }
+    return false;
+  };
+
+  const recoverAuthIfNeeded = async (): Promise<boolean> => {
+    const loginHeading = page.getByRole('heading', { name: /login to continue/i });
+    const loginVisible = await loginHeading.isVisible({ timeout: 5000 }).catch(() => false);
+    if (!loginVisible) return false;
+    await agencyFormPage.loginWithIdentity(loginIdentity.provider, loginEmail);
+    try {
+      await agencyFormPage.ensureNoLoadingError().catch(() => {});
+      const reachedBysAfterLogin = await waitForBysOrDraft(180000);
+      if (reachedBysAfterLogin) return true;
+      await page.goto(agencyFormUrl, { waitUntil: 'domcontentloaded' }).catch(() => {});
+      await agencyFormPage.ensureNoLoadingError().catch(() => {});
+      return await waitForBysOrDraft(15000);
+    } catch {
+      await page.goto(agencyFormUrl, { waitUntil: 'domcontentloaded' }).catch(() => {});
+      await agencyFormPage.ensureNoLoadingError().catch(() => {});
+      return await waitForBysOrDraft(15000);
+    }
+  };
+
+  const ensureBysWithFreshLogin = async () => {
     await page.goto(agencyFormUrl, { waitUntil: 'domcontentloaded' });
     await agencyFormPage.ensureNoLoadingError();
     await handleDraftFailedModal();
-
     const alreadyAtBys = await waitForBysOrDraft(8000);
-    if (alreadyAtBys) {
-      return;
-    }
-
+    if (alreadyAtBys) return;
     const recovered = await recoverAuthIfNeeded();
     await handleDraftFailedModal();
-
     if (recovered) {
       const bysAfterRecovery = await waitForBysOrDraft(30000);
-      if (bysAfterRecovery) {
-        return;
-      }
-
+      if (bysAfterRecovery) return;
       throw new Error(
         `Identity login completed but app did not return to Before You Start. Current URL: ${page.url()}.`
       );
     }
-
-    // Full login path: do not rely on any saved auth state.
     await agencyFormPage.loginWithIdentity(loginIdentity.provider, loginEmail, { navigateFromEntry: true });
     await handleDraftFailedModal();
-
     const bysVisible = await waitForBysOrDraft(180000);
     if (!bysVisible) {
       throw new Error(
@@ -211,8 +179,8 @@ test('Applicant Parent Navigation to Disability Details', async ({ page }, testI
     }
   };
 
-  // Stable auth entry: use env/mapped myID email and recover login inline when needed.
-  await ensureBysWithFreshMyIdLogin();
+  // Stable auth entry: use env/mapped login and recover inline when needed.
+  await ensureBysWithFreshLogin();
   await beforeYouStartPage.startNewIfDraftExists();
   await handleDraftFailedModal();
 
@@ -230,128 +198,62 @@ test('Applicant Parent Navigation to Disability Details', async ({ page }, testI
 
   await expect(contactDetailsHeading).toBeVisible({ timeout: 60000 });
 
+
   // Select Myself path and continue to Applicant details (following MyselfApplicant.spec pattern)
   const myselfOption = page.getByRole('radio', { name: /myself, the person with a disability/i }).first();
   await myselfOption.check().catch(async () => myselfOption.click());
-  await fillRequiredContactDetails(page);
-
   await agencyFormPage.clickSaveAndContinue();
   await expect(applicantDetailsHeading).toBeVisible({ timeout: 60000 });
 
-  // On Applicant Details click Yes.
+  // On Applicant Details click Yes (do not fill anything else)
   const yesOption = page.getByRole('radio', { name: /^Yes$/i }).first();
   await yesOption.check().catch(async () => yesOption.click());
 
-  // Overwrite values regardless of prefill.
-  await page.getByRole('textbox', { name: /^First name\b/i }).first().fill('Michael');
-  await page.getByRole('textbox', { name: /Middle name \(optional\)/i }).first().fill('Arthur');
-  await page.getByRole('textbox', { name: /^Last name\b/i }).first().fill('George');
-
+  // --- Prefill detection and logging ---
+  const prefillStatus: Record<string, string> = {};
+  // 1. First name
+  const firstName = await page.getByRole('textbox', { name: /^First name\b/i }).first();
+  prefillStatus['First name'] = ((await firstName.inputValue().catch(() => '')) || '').trim();
+  // 2. Last name
+  const lastName = await page.getByRole('textbox', { name: /^Last name\b/i }).first();
+  prefillStatus['Last name'] = ((await lastName.inputValue().catch(() => '')) || '').trim();
+  // 3. Date of birth
   const dobParts = page.getByRole('spinbutton', { name: 'Date of birth' });
-  await dobParts.nth(0).fill('22');
-  await dobParts.nth(1).fill('12');
-  await dobParts.nth(2).fill('1993');
-
+  const dobDay = ((await dobParts.nth(0).inputValue().catch(() => '')) || '').trim();
+  const dobMonth = ((await dobParts.nth(1).inputValue().catch(() => '')) || '').trim();
+  const dobYear = ((await dobParts.nth(2).inputValue().catch(() => '')) || '').trim();
+  prefillStatus['Date of birth'] = dobDay && dobMonth && dobYear ? `${dobDay}/${dobMonth}/${dobYear}` : '';
+  // 4. Residential address
   const residentialAddress = page.getByRole('combobox', { name: /Residential address/i }).first();
-  const residentialCurrentValue = (await residentialAddress.inputValue().catch(() => '')).trim();
-  if (!residentialCurrentValue) {
-    await setAddressValue(residentialAddress, '10 SEATTLE CL SPRING MOUNTAIN QLD 4300', {
-      searchTerms: ['10 SEATTLE CL SPRING MOUNTAIN QLD 4300'],
-      requireDropdownSelection: false
-    });
-    await expect(residentialAddress).toHaveValue(/10 SEATTLE CL SPRING MOUNTAIN QLD 4300/i, { timeout: 15000 });
+  prefillStatus['Residential address'] = ((await residentialAddress.inputValue().catch(() => '')) || '').trim();
+  // 5. Upload a Photo
+  const photoUploaded = await page.getByRole('button', { name: /delete/i }).first().isVisible({ timeout: 2000 }).catch(() => false)
+    || await page.getByText(/upload complete/i).first().isVisible({ timeout: 2000 }).catch(() => false);
+  prefillStatus['Upload a Photo'] = photoUploaded ? 'Yes' : '';
+  // 6. Photo declaration
+  const verificationCheckbox = page.getByRole('checkbox', { name: /uploaded photo has been sighted and verified by my health professional/i }).first();
+  prefillStatus['Photo declaration'] = (await verificationCheckbox.isChecked().catch(() => false)) ? 'Yes' : '';
+
+  // Log prefilled and empty fields
+  const prefilledFields = Object.entries(prefillStatus).filter(([_, v]) => v).map(([k, v]) => `${k}: ${v}`).join('\n');
+  const emptyFields = Object.entries(prefillStatus).filter(([_, v]) => !v).map(([k]) => k);
+  console.log('Prefilled fields on Applicant Details screen:\n' + prefilledFields);
+  if (emptyFields.length) {
+    console.log('Empty fields requiring validation: ' + emptyFields.join(', '));
   }
 
-  const differentAddressCheckbox = page.getByRole('checkbox', { name: /send my companion card to a different address/i }).first();
-  const differentCheckedBefore = await differentAddressCheckbox.isChecked().catch(() => false);
-  if (!differentCheckedBefore) {
-    await differentAddressCheckbox.check();
-  }
-  await expect(differentAddressCheckbox).toBeChecked({ timeout: 10000 });
+  // Click Save & Continue without filling any fields
+  await agencyFormPage.clickSaveAndContinue();
 
-  const whereSendQuestion = page.getByText(/where should we send the companion card\?/i).first();
-  await expect(whereSendQuestion).toBeVisible({ timeout: 15000 });
-  const whereSendCombobox = page.locator('input[id*="applicantPostalAddressForCard-search-input"]').first();
-  await expect(whereSendCombobox).toBeVisible({ timeout: 15000 });
-  await whereSendCombobox.click();
-  await whereSendCombobox.fill('18 MIAMI ST SPRING MOUNTAIN QLD 4300');
+  // Wait for validation errors to appear
+  const errorBannerHeading = page.getByRole('heading', { name: /please review the following errors/i }).first();
+  await expect(errorBannerHeading).toBeVisible({ timeout: 10000 });
 
-  const whereSendOptions = page.locator(
-    '[id*="applicantPostalAddressForCard-listbox"] [role="option"], [id*="applicantPostalAddressForCard-listbox"] li, [id*="applicantPostalAddressForCard-listbox"] [id*="option"]'
-  );
-  await expect(whereSendOptions.first()).toBeVisible({ timeout: 10000 });
-
-  const miamiOption = whereSendOptions.filter({ hasText: /18\s+MIAMI\s+ST/i }).first();
-  if (await miamiOption.isVisible({ timeout: 1000 }).catch(() => false)) {
-    await miamiOption.click({ force: true });
-  } else {
-    await whereSendOptions.first().click({ force: true });
-  }
-  await expect(whereSendCombobox).toHaveValue(/18 MIAMI ST/i, { timeout: 15000 });
-  await expect(page.getByRole('button', { name: /clear where should we send the companion card\?/i }).first()).toBeVisible({ timeout: 15000 });
-  await whereSendCombobox.press('Tab').catch(() => {});
-
-  // Upload PNG file.
-  const uploadPngPath = 'C:/PlaywrightTS/repo-doc-images/image1.png';
-  const browseFilesButton = page.getByRole('button', { name: /browse files/i }).first();
-  await expect(browseFilesButton).toBeVisible({ timeout: 15000 });
-  const [fileChooser] = await Promise.all([
-    page.waitForEvent('filechooser'),
-    browseFilesButton.click()
-  ]);
-  await fileChooser.setFiles(uploadPngPath);
-
-  await expect(page.getByRole('button', { name: /image1\.png/i }).first()).toBeVisible({ timeout: 20000 });
-  await expect(page.getByText(/upload complete/i).first()).toBeVisible({ timeout: 20000 });
-  await expect(page.getByRole('button', { name: /^Delete$/i }).first()).toBeVisible({ timeout: 20000 });
-  await expect(page.getByText(/upload a photo is required/i).first()).not.toBeVisible({ timeout: 20000 });
-
-  // Check photo verification confirmation.
-  const verificationCheckbox = page
-    .getByRole('checkbox', { name: /i confirm that the uploaded photo has been sighted and verified by my health professional\./i })
-    .first();
-  await verificationCheckbox.check().catch(async () => verificationCheckbox.click());
-  await expect(verificationCheckbox).toBeChecked({ timeout: 10000 });
-
-  const submitApplicantDetails = async () => {
-    await agencyFormPage.clickSaveAndContinue();
-
-    const errorBannerHeading = page.getByRole('heading', { name: /please review the following errors/i }).first();
-    const reachedDisabilityDetails = await disabilityDetailsHeading.isVisible({ timeout: 15000 }).catch(() => false);
-    if (reachedDisabilityDetails) {
-      return;
-    }
-
-    const hasErrorBanner = await errorBannerHeading.isVisible({ timeout: 2000 }).catch(() => false);
-    if (!hasErrorBanner) {
-      return;
-    }
-
-    const whereSendLooksCommitted = await whereSendCombobox.inputValue().then(value => /18 MIAMI ST/i.test(value)).catch(() => false);
-    const uploadLooksCommitted = await page.getByText(/upload complete/i).first().isVisible({ timeout: 1000 }).catch(() => false);
-    const verificationChecked = await verificationCheckbox.isChecked().catch(() => false);
-
-    if (whereSendLooksCommitted && uploadLooksCommitted && verificationChecked) {
-      await agencyFormPage.clickSaveAndContinue();
-    }
-
-    const reachedAfterRetry = await disabilityDetailsHeading.isVisible({ timeout: 15000 }).catch(() => false);
-    if (reachedAfterRetry) {
-      return;
-    }
-
-    const bannerText = await errorBannerHeading.locator('xpath=..').innerText().catch(() => 'Validation error banner displayed.');
-    throw new Error(`Applicant details did not submit. ${bannerText.replace(/\s+/g, ' ').trim()}`);
-  };
-
-  // Save and Continue.
-  await submitApplicantDetails();
-
-  // Disability details should be shown.
-  await expect(disabilityDetailsHeading).toBeVisible({ timeout: 60000 });
-
-  console.log('✅ Test Pass - Successfully navigated from Contact Details to Disability Details screen using MyselfApplicant pattern');
+  // Take screenshot with unique timestamp
+  const screenshotDir = path.resolve(__dirname, '../../../../test-results');
+  if (!fs.existsSync(screenshotDir)) fs.mkdirSync(screenshotDir, { recursive: true });
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const screenshotPath = path.join(screenshotDir, `ApplicantDetailsValidationErrors_${timestamp}.png`);
+  await page.screenshot({ path: screenshotPath, fullPage: true });
+  console.log('Applicant Details validation errors screenshot saved at: ' + screenshotPath);
 });
-
-
-

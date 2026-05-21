@@ -319,11 +319,16 @@ test('Parent Contact1', async ({ page }, testInfo) => {
     failValidation(5);
   }
 
-  // Screenshot of Contact Details screen.
-  await page.screenshot({
-    path: testInfo.outputPath('parent-contact1-contact-details.png'),
-    fullPage: true,
-  });
+
+  // Unique timestamped screenshot of Contact Details screen.
+  const path = require('path');
+  const fs = require('fs');
+  const screenshotDir = path.resolve(__dirname, '../../../../test-results');
+  if (!fs.existsSync(screenshotDir)) fs.mkdirSync(screenshotDir, { recursive: true });
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const screenshotPath = path.join(screenshotDir, `ParentContact1_ContactDetails_${timestamp}.png`);
+  await page.screenshot({ path: screenshotPath, fullPage: true });
+  console.log('Parent Contact1 Contact Details screenshot saved at: ' + screenshotPath);
 
   // Continue and Validation 6: Must proceed to Applicant details.
   await agencyFormPage.clickSaveAndContinue();

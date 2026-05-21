@@ -258,6 +258,18 @@ test('Applicant Myself Mandatory Check', async ({ page }, testInfo) => {
   const hasDobInline =
     (await dobInlineOptions[0].isVisible({ timeout: 3000 }).catch(() => false)) ||
     (await dobInlineOptions[1].isVisible({ timeout: 3000 }).catch(() => false));
+
+
+  // --- Take screenshot with unique timestamp after all validation errors appear in applicant details screen ---
+  const path = require('path');
+  const fs = require('fs');
+  const screenshotDir = path.resolve(__dirname, '../../../../test-results');
+  if (!fs.existsSync(screenshotDir)) fs.mkdirSync(screenshotDir, { recursive: true });
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const screenshotPath = path.join(screenshotDir, `ApplicantMyselfMandatoryCheckValidationErrors_${timestamp}.png`);
+  await page.screenshot({ path: screenshotPath, fullPage: true });
+  console.log('Applicant Myself validation errors screenshot saved at: ' + screenshotPath);
+
   if (!hasDobInline) {
     failValidation(4, 'Date of birth error text not visible');
   }
@@ -281,12 +293,6 @@ test('Applicant Myself Mandatory Check', async ({ page }, testInfo) => {
   if (!hasPhotoVerificationInline) {
     failValidation(4, 'Photo verification error text not visible');
   }
-
-  // Screenshot when all error messages are displayed.
-  await page.screenshot({
-    path: testInfo.outputPath('applicant-myself-mandatory-check-errors.png'),
-    fullPage: true,
-  });
 
   if (!firstNamePrefilled || !lastNamePrefilled || !residentialPrefilled) {
     console.log('Validation 2 result: One or more applicant fields were not prefilled, and inline errors were validated.');
