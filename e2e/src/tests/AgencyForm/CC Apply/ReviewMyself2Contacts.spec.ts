@@ -401,13 +401,17 @@ test('Review Myself 2 Contacts', async ({ page }, testInfo) => {
   await dobParts.nth(2).fill(applicantDobYear);
 
   const residentialAddress = page.getByRole('combobox', { name: /Residential address/i }).first();
-  const residentialCurrentValue = (await residentialAddress.inputValue().catch(() => '')).trim();
-  if (!residentialCurrentValue) {
-    await setAddressValue(residentialAddress, residentialAddressValue, {
-      searchTerms: [residentialAddressValue],
-      requireDropdownSelection: false,
-    });
+  await residentialAddress.click();
+  await residentialAddress.fill(residentialAddressValue);
+  const residentialOptions = page.locator('[role="listbox"] [role="option"], [role="listbox"] li, [id*="option"]');
+  await expect(residentialOptions.first()).toBeVisible({ timeout: 10000 });
+  const seattleOption = residentialOptions.filter({ hasText: /10\s+SEATTLE\s+CL/i }).first();
+  if (await seattleOption.isVisible({ timeout: 1000 }).catch(() => false)) {
+    await seattleOption.click({ force: true });
+  } else {
+    await residentialOptions.first().click({ force: true });
   }
+  await expect(residentialAddress).toHaveValue(/10 SEATTLE CL SPRING MOUNTAIN QLD 4300/i, { timeout: 15000 });
   // Capture actual displayed value after dropdown selection (may differ in case/abbreviation from typed string).
   const residentialActualValue = (await residentialAddress.inputValue().catch(() => residentialAddressValue)).trim() || residentialAddressValue;
 

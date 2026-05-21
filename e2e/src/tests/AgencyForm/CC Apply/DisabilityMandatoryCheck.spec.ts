@@ -254,13 +254,17 @@ test('Disability Mandatory Check', async ({ page }, testInfo) => {
   await dobParts.nth(2).fill('1993');
 
   const residentialAddress = page.getByRole('combobox', { name: /Residential address/i }).first();
-  const residentialCurrentValue = (await residentialAddress.inputValue().catch(() => '')).trim();
-  if (!residentialCurrentValue) {
-    await setAddressValue(residentialAddress, '10 SEATTLE CL SPRING MOUNTAIN QLD 4300', {
-      searchTerms: ['10 SEATTLE CL SPRING MOUNTAIN QLD 4300'],
-      requireDropdownSelection: false,
-    });
+  await residentialAddress.click();
+  await residentialAddress.fill('10 SEATTLE CL SPRING MOUNTAIN QLD 4300');
+  const residentialOptions = page.locator('[role="listbox"] [role="option"], [role="listbox"] li, [id*="option"]');
+  await expect(residentialOptions.first()).toBeVisible({ timeout: 10000 });
+  const seattleOption = residentialOptions.filter({ hasText: /10\s+SEATTLE\s+CL/i }).first();
+  if (await seattleOption.isVisible({ timeout: 1000 }).catch(() => false)) {
+    await seattleOption.click({ force: true });
+  } else {
+    await residentialOptions.first().click({ force: true });
   }
+  await expect(residentialAddress).toHaveValue(/10 SEATTLE CL SPRING MOUNTAIN QLD 4300/i, { timeout: 15000 });
 
   const differentAddressCheckbox = page.getByRole('checkbox', { name: /send my companion card to a different address/i }).first();
   const differentCheckedBefore = await differentAddressCheckbox.isChecked().catch(() => false);
