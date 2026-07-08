@@ -147,14 +147,10 @@ test('Applicant NS', async ({ page }, testInfo) => {
   const option1 = page.getByRole('radio', { name: /Myself, the person with a disability/i }).first();
   await option1.check().catch(async () => option1.click());
 
-  const firstName = page.getByRole('textbox', { name: /^First name\b/i }).first();
-  const lastName = page.getByRole('textbox', { name: /^Last name\b/i }).first();
   const email = page.getByRole('textbox', { name: /^Email address\b|^Email\b/i }).first();
   const phone = page.getByRole('textbox', { name: /^Phone number\b|^Mobile phone number\b/i }).first();
 
-  await firstName.waitFor({ state: 'visible', timeout: 15000 });
-  await firstName.fill('Test');
-  await lastName.fill('User');
+  await email.waitFor({ state: 'visible', timeout: 15000 });
   await email.fill('test@example.com');
   await phone.fill('0401234567');
 

@@ -18,6 +18,7 @@ test('BYS: mandatory selection required before proceeding', async ({ page }, tes
 
   const loginIdentity = getLoginIdentityForSpec('BYSMandatoryCheck.spec.ts');
   const loginEmail = loginIdentity.email;
+  const loginProvider = loginIdentity.provider;
   const agencyFormUrl = `${environment.DTP_ROOT_URL || 'https://forms.preprod.beta.my.qld.gov.au'}/companioncardapply/agency-form`;
 
   const handleDraftFailedModal = async (): Promise<boolean> => {
@@ -93,19 +94,19 @@ test('BYS: mandatory selection required before proceeding', async ({ page }, tes
     }
 
     // Full login path: do not rely on any saved auth state.
-    await agencyFormPage.loginWithIdentity(loginIdentity.provider, loginEmail, { navigateFromEntry: true });
+    await agencyFormPage.loginWithIdentity(loginProvider, loginEmail, { navigateFromEntry: true });
     await handleDraftFailedModal();
 
     const bysVisible = await waitForBysOrDraft(180000);
     if (!bysVisible) {
       throw new Error(
-        `Auth session is not valid for BYS Mandatory Check after full ${loginIdentity.provider} login flow. ` +
+        `Auth session is not valid for BYS Mandatory Check after full ${loginProvider} login flow. ` +
         `Timed out waiting for Before You Start after identity login. Current URL: ${page.url()}.`
       );
     }
   };
 
-  // Stable auth entry: use env/mapped myID email and recover login inline when needed.
+  // Stable auth entry: use the centralized spec mapping and recover login inline when needed.
   await ensureBysWithFreshMyIdLogin();
   await beforeYouStartPage.startNewIfDraftExists();
   await handleDraftFailedModal();

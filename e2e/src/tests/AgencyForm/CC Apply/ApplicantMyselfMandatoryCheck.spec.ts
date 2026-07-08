@@ -161,14 +161,10 @@ test('Applicant Myself Mandatory Check', async ({ page }, testInfo) => {
   const myselfOption = page.getByRole('radio', { name: /Myself, the person with a disability/i }).first();
   await myselfOption.check().catch(async () => myselfOption.click());
 
-  const contactFirstName = page.getByRole('textbox', { name: /^First name\b/i }).first();
-  const contactLastName = page.getByRole('textbox', { name: /^Last name\b/i }).first();
   const contactEmail = page.getByRole('textbox', { name: /^Email address\b|^Email\b/i }).first();
   const contactPhone = page.getByRole('textbox', { name: /^Phone number\b|^Mobile phone number\b/i }).first();
 
-  await contactFirstName.waitFor({ state: 'visible', timeout: 15000 });
-  await fillIfEmpty(contactFirstName, 'Auto');
-  await fillIfEmpty(contactLastName, 'Tester');
+  await contactEmail.waitFor({ state: 'visible', timeout: 15000 });
   await fillIfEmpty(contactEmail, 'auto.tester@example.com');
   await fillIfEmpty(contactPhone, '0401234567');
 

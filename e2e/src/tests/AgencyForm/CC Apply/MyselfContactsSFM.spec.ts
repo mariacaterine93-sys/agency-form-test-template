@@ -218,8 +218,6 @@ test('Myself Contacts SFM', async ({ page }, testInfo) => {
 
   // Select "Myself..." and fill details.
   await option1.check().catch(async () => option1.click());
-  await fillIfVisible(page.getByLabel(/First name/i).first(), 'Tom');
-  await fillIfVisible(page.getByLabel(/Last name/i).first(), 'Waters');
   await fillIfVisible(page.getByLabel(/Email/i).first(), 'xyz@gmail.com');
   await fillIfVisible(page.getByLabel(/Phone number|Mobile phone number/i).first(), '0401975446');
 

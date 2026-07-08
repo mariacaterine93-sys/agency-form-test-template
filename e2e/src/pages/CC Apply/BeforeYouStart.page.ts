@@ -18,23 +18,34 @@ export class BeforeYouStartPage extends AgencyFormPage {
     async startNewIfDraftExists() {
         const hasDraft = await this.draftDialog.waitFor({ state: "visible", timeout: 8000 }).then(() => true).catch(() => false);
 
-        if (hasDraft) {
-            const startNewVisible = await this.startNewButton.isVisible({ timeout: 2000 }).catch(() => false);
+        if (!hasDraft) {
+            return;
+        }
+
+        const modalStartNewButton = this.draftDialog.getByRole("button", { name: /start new/i }).first();
+
+        for (let attempt = 0; attempt < 3; attempt++) {
+            const dialogVisible = await this.draftDialog.isVisible().catch(() => false);
+            if (!dialogVisible) {
+                return;
+            }
+
+            const startNewVisible = await modalStartNewButton.isVisible({ timeout: 2000 }).catch(() => false);
             if (startNewVisible) {
-                await this.startNewButton.click({ force: true });
+                await modalStartNewButton.click({ force: true }).catch(() => {});
             }
 
             await Promise.race([
-                this.draftDialog.waitFor({ state: "hidden", timeout: 15000 }),
+                this.draftDialog.waitFor({ state: "hidden", timeout: 8000 }),
                 this.page.getByRole("heading", { name: /before you start|what are you trying to do\?/i }).first()
-                    .waitFor({ state: "visible", timeout: 15000 }),
+                    .waitFor({ state: "visible", timeout: 8000 }),
             ]).catch(() => {});
+        }
 
-            const dialogStillVisible = await this.draftDialog.isVisible().catch(() => false);
-            if (dialogStillVisible) {
-                await this.startNewButton.click({ force: true }).catch(() => {});
-                await this.draftDialog.waitFor({ state: "hidden", timeout: 15000 }).catch(() => {});
-            }
+        const dialogStillVisible = await this.draftDialog.isVisible().catch(() => false);
+        if (dialogStillVisible) {
+            await modalStartNewButton.click({ force: true }).catch(() => {});
+            await this.draftDialog.waitFor({ state: "hidden", timeout: 15000 }).catch(() => {});
         }
     }
 

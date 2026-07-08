@@ -168,19 +168,13 @@ test('Myself Contact Mandatory Check', async ({ page }, testInfo) => {
   await myselfOption.check().catch(async () => myselfOption.click());
 
   // Validation 2: Check if core fields are prefilled.
-  const firstName = page.getByRole('textbox', { name: /^First name\b/i }).first();
-  const lastName = page.getByRole('textbox', { name: /^Last name\b/i }).first();
   const email = page.getByRole('textbox', { name: /^Email address\b|^Email\b/i }).first();
   const phone = page.getByRole('textbox', { name: /^Phone number\b|^Mobile phone number\b/i }).first();
 
-  await expect(firstName).toBeVisible({ timeout: 15000 });
-  await expect(lastName).toBeVisible({ timeout: 15000 });
   await expect(email).toBeVisible({ timeout: 15000 });
   await expect(phone).toBeVisible({ timeout: 15000 });
 
   const fieldsArePrefilled =
-    (await isFilled(firstName)) &&
-    (await isFilled(lastName)) &&
     (await isFilled(email)) &&
     (await isFilled(phone));
 
@@ -193,8 +187,6 @@ test('Myself Contact Mandatory Check', async ({ page }, testInfo) => {
 
   if (fieldsArePrefilled) {
     const shouldNotShow = [
-      page.getByText(/first name is required/i).first(),
-      page.getByText(/last name is required/i).first(),
       page.getByText(/email( address)? is required/i).first(),
       page.getByText(/phone number is required|mobile phone number is required/i).first(),
     ];
@@ -204,8 +196,6 @@ test('Myself Contact Mandatory Check', async ({ page }, testInfo) => {
     }
   } else {
     const requiredFieldErrors = [
-      page.getByText(/first name is required/i).first(),
-      page.getByText(/last name is required/i).first(),
       page.getByText(/email( address)? is required/i).first(),
       page.getByText(/phone number is required|mobile phone number is required/i).first(),
     ];

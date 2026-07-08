@@ -48,7 +48,7 @@ export class AgencyFormPage {
         this.continueWithQdiButton = page.getByRole("button", { name: /continue with qdi|continue with qgov ?id|continue with queensland/i });
         this.selectMyIdButton = page.getByRole("button", { name: "Select myID" });
         this.selectQdiButton = page.getByRole("button", { name: /select qdi|select qgov ?id/i });
-        this.myIdEmailTextBox = page.getByRole("textbox", { name: "myID email" });
+        this.myIdEmailTextBox = page.getByRole("textbox", { name: /myID email|email address|email/i }).first();
         this.qdiEmailTextBox = page.getByRole("textbox", { name: /email address|qdi email|qgov ?id email|email/i }).first();
         this.qdiPasswordTextBox = page.getByRole("textbox", { name: /password/i }).first();
         this.qdiOneTimeCodeTextBox = page.getByRole("textbox", { name: /one-?time code|enter your one-time code/i }).first();
@@ -105,8 +105,23 @@ export class AgencyFormPage {
     }
 
     async continueWithMyId() {
-        await this.continueWithMyIdButton.waitFor({ state: "visible", timeout: 15000 });
-        await this.continueWithMyIdButton.click();
+        const continueCandidates = [
+            this.continueWithMyIdButton,
+            this.page.getByRole("link", { name: /continue with myID/i }),
+            this.page.getByText(/continue with myID/i),
+        ];
+
+        for (const candidate of continueCandidates) {
+            const visible = await candidate.isVisible({ timeout: 5000 }).catch(() => false);
+            if (!visible) {
+                continue;
+            }
+
+            await candidate.click();
+            return;
+        }
+
+        throw new Error(`Could not find a visible "Continue with myID" control on ${this.page.url()}.`);
     }
 
     async selectMyId() {
@@ -116,6 +131,22 @@ export class AgencyFormPage {
 
     async enterMyIdEmail(emailAddress: string) {
         this.lastMyIdEmail = emailAddress;
+        const emailCandidates: Locator[] = [
+            this.myIdEmailTextBox,
+            this.page.getByRole("textbox", { name: /^Email address\b|^Email\b/i }).first(),
+            this.page.locator('input[type="email"], input[name*="email" i], input[id*="email" i]').first(),
+        ];
+
+        for (const emailBox of emailCandidates) {
+            const visible = await emailBox.isVisible({ timeout: 5000 }).catch(() => false);
+            if (!visible) {
+                continue;
+            }
+
+            await emailBox.fill(emailAddress);
+            return;
+        }
+
         await this.myIdEmailTextBox.waitFor({ state: "visible", timeout: 30000 });
         await this.myIdEmailTextBox.fill(emailAddress);
     }
@@ -375,11 +406,16 @@ export class AgencyFormPage {
         await this.page.waitForLoadState("networkidle", { timeout: 15000 }).catch(() => {});
         console.log("[CONSENT] Page settled. URL:", this.page.url());
 
+        // Some myID screens only reveal the action button after the consent checkbox is checked.
+        await this.checkConsentCheckboxIfVisible();
+        await this.page.waitForTimeout(750);
+
         // Wait for either a Consent button or a Continue button to appear,
         // which signals the consent form is rendered and ready to interact with
         const consentOrContinue = await Promise.race([
             this.consentButton.waitFor({ state: "visible", timeout: 25000 }).then(() => "consent").catch(() => null),
             this.genericContinueButton.waitFor({ state: "visible", timeout: 25000 }).then(() => "continue").catch(() => null),
+            this.page.getByRole("button", { name: /^Submit$/i }).waitFor({ state: "visible", timeout: 25000 }).then(() => "submit").catch(() => null),
         ]);
         console.log("[CONSENT] Detected consent UI type:", consentOrContinue);
 
@@ -394,6 +430,13 @@ export class AgencyFormPage {
         if (consentOrContinue === "consent") {
             console.log("[CONSENT] Clicking Consent button...");
             await this.consentButton.click();
+            await this.page.waitForURL(/companioncardapply/i, { timeout: 30000 }).catch(() => {});
+            return;
+        }
+
+        if (consentOrContinue === "submit") {
+            console.log("[CONSENT] Clicking Submit button...");
+            await this.page.getByRole("button", { name: /^Submit$/i }).click();
             await this.page.waitForURL(/companioncardapply/i, { timeout: 30000 }).catch(() => {});
             return;
         }
@@ -437,37 +480,93 @@ export class AgencyFormPage {
             }
         }
 
-        // Run one slow, deterministic pass through the identity gateway.
-        const clickedContinue = await this.clickWhenVisible(continueButton, 30000);
-        if (clickedContinue) {
-            await this.page.waitForLoadState("domcontentloaded").catch(() => {});
-            await this.page.waitForTimeout(1500);
+        const clickContinueWithProvider = async () => {
+            const continueLabel = provider === "QDI"
+                ? /continue\s+with\s+(qdi|qgov\s?id|queensland)/i
+                : /continue\s+with\s+my\s?id/i;
+
+            const deadline = Date.now() + 30000;
+
+            while (Date.now() < deadline) {
+                const beginVisible = await this.beginButton.isVisible({ timeout: 1000 }).catch(() => false);
+                if (beginVisible) {
+                    await this.beginButton.click().catch(() => {});
+                    await this.page.waitForLoadState("domcontentloaded").catch(() => {});
+                    await this.page.waitForTimeout(1200);
+                }
+
+                const continueCandidates: Locator[] = [
+                    continueButton,
+                    this.page.getByRole("button", { name: continueLabel }).first(),
+                    this.page.getByRole("link", { name: continueLabel }).first(),
+                    this.page.locator("button, a").filter({ hasText: continueLabel }).first(),
+                    this.page.getByText(continueLabel).first(),
+                ];
+
+                for (const candidate of continueCandidates) {
+                    const visible = await candidate.isVisible({ timeout: 1000 }).catch(() => false);
+                    if (!visible) {
+                        continue;
+                    }
+
+                    await candidate.click().catch(() => {});
+                    await this.page.waitForLoadState("domcontentloaded").catch(() => {});
+                    await this.page.waitForTimeout(1500);
+                    return;
+                }
+
+                await this.page.waitForTimeout(1000);
+            }
+
+            throw new Error(
+                `Could not find visible '${provider}' continue control on login page. Current URL: ${this.page.url()}`
+            );
+        };
+
+        if (provider === "MYID") {
+            const loginHeading = this.page.getByRole("heading", { name: /login to continue/i });
+            await loginHeading.waitFor({ state: "visible", timeout: 30000 }).catch(() => {});
         }
 
-        const clickedSelect = await this.clickWhenVisible(selectButton, 30000);
-        if (clickedSelect) {
-            await this.page.waitForLoadState("domcontentloaded").catch(() => {});
-            await this.page.waitForTimeout(1500);
-        }
+        // Wait for the provider entry page to settle, then click through the selected identity path.
+        await clickContinueWithProvider();
+
+        await selectButton.waitFor({ state: "visible", timeout: 30000 });
+        await selectButton.click();
+        await this.page.waitForLoadState("domcontentloaded").catch(() => {});
+        await this.page.waitForTimeout(1500);
 
         const emailVisible = await this.waitForVisible(emailBox, 45000);
         if (!emailVisible) {
+            const onCompanionCardRootUrl = /\/companioncardapply\/?$/i.test(this.page.url());
+            const continueVisible = await continueButton.isVisible({ timeout: 1000 }).catch(() => false);
+            const selectVisible = await selectButton.isVisible({ timeout: 1000 }).catch(() => false);
+
             if (provider === "QDI") {
                 const qdiPasswordVisible = await this.qdiPasswordTextBox.isVisible({ timeout: 1000 }).catch(() => false);
                 const qdiOtpVisible = await this.qdiOneTimeCodeTextBox.isVisible({ timeout: 1000 }).catch(() => false);
                 const onQdiChallengeUrl = /mfa|oauth-prep\.tmr\.qld\.gov\.au/i.test(this.page.url());
-                const onCompanionCardRootUrl = /\/companioncardapply\/?$/i.test(this.page.url());
-                const continueVisible = await continueButton.isVisible({ timeout: 1000 }).catch(() => false);
-                const selectVisible = await selectButton.isVisible({ timeout: 1000 }).catch(() => false);
 
                 if (qdiPasswordVisible || qdiOtpVisible || onQdiChallengeUrl) {
                     await this.completeQdiFlowIfRequired();
                     await this.consentIfRequired();
                     return;
                 }
+            }
 
-                if (onCompanionCardRootUrl && !continueVisible && !selectVisible) {
-                    console.log("QDI email step not visible, but provider controls are absent on companion card root. Assuming existing authenticated session.");
+            if (provider === "MYID" && onCompanionCardRootUrl && !continueVisible && !selectVisible) {
+                await this.page.goto(companionCardApplyUrl).catch(() => {});
+                await this.beginButton.waitFor({ state: "visible", timeout: 30000 }).catch(() => {});
+                await this.beginButton.click().catch(() => {});
+                await clickContinueWithProvider();
+                await selectButton.waitFor({ state: "visible", timeout: 30000 });
+                await selectButton.click();
+                await this.page.waitForLoadState("domcontentloaded").catch(() => {});
+                await this.page.waitForTimeout(1500);
+
+                const retriedEmailVisible = await this.waitForVisible(emailBox, 45000);
+                if (retriedEmailVisible) {
+                    await this.enterIdentityEmail(provider, emailAddress);
                     await this.consentIfRequired();
                     return;
                 }
@@ -479,8 +578,17 @@ export class AgencyFormPage {
         }
 
         await this.enterIdentityEmail(provider, emailAddress);
-        // Both QDI and MYID require Get Code → OTP → Continue before reaching consent
-        await this.completeQdiFlowIfRequired();
+        if (provider === "MYID") {
+            const clickedGetCode = await this.clickIfVisible(this.getCodeButton, 5000);
+            if (clickedGetCode) {
+                await this.page.waitForLoadState("domcontentloaded").catch(() => {});
+                await this.page.waitForTimeout(1500);
+            }
+        }
+        if (provider === "QDI") {
+            // QDI may require Get Code → OTP → Continue before reaching consent.
+            await this.completeQdiFlowIfRequired();
+        }
         await this.consentIfRequired();
     }
 
@@ -542,10 +650,8 @@ export class AgencyFormPage {
 
         if (loginToContinueVisible) {
             const continueButton = provider === "QDI" ? this.continueWithQdiButton : this.continueWithMyIdButton;
-            const continueVisible = await continueButton.isVisible({ timeout: 5000 }).catch(() => false);
-            if (continueVisible) {
-                await continueButton.click();
-            }
+            await continueButton.waitFor({ state: "visible", timeout: 15000 }).catch(() => {});
+            await continueButton.click().catch(() => {});
         }
 
         const selectButton = provider === "QDI" ? this.selectQdiButton : this.selectMyIdButton;

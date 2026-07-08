@@ -7,8 +7,6 @@ import { getLoginIdentityForSpec } from '../../test-data/centralizedTestData';
 import { environment } from '../../config/environment';
 
 const fillRequiredContactDetails = async (page: Page) => {
-  await page.getByRole('textbox', { name: /^First name\b/i }).first().fill('Tom');
-  await page.getByRole('textbox', { name: /^Last name\b/i }).first().fill('Waters');
   await page.getByRole('textbox', { name: /^Email address\b|^Email\b/i }).first().fill('xyz@gmail.com');
   await page.getByRole('textbox', { name: /^Phone number\b|^Mobile phone number\b/i }).first().fill('0401975446');
 
