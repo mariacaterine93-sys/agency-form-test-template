@@ -1,0 +1,222 @@
+name: Nightly AgencyForm Tests (3 Fixed Groups)
+
+on:
+  schedule:
+    - cron: '15 0 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CI: "true"
+  BASE_URL: ${{ vars.BASE_URL }}
+  DTP_ROOT_URL: ${{ vars.DTP_ROOT_URL }}
+  E2E_TEST_USER_EMAIL: ${{ vars.E2E_TEST_USER_EMAIL }}
+  E2E_MYID_EMAIL: ${{ secrets.E2E_MYID_EMAIL }}
+  E2E_LOGIN_PROVIDER: ${{ vars.E2E_LOGIN_PROVIDER }}
+  E2E_LOGIN_EMAIL: ${{ vars.E2E_LOGIN_EMAIL }}
+  E2E_QDI_PASSWORD: ${{ secrets.E2E_QDI_PASSWORD }}
+  E2E_QDI_OTP_CODE: ${{ secrets.E2E_QDI_OTP_CODE }}
+  E2E_TEST_RUNNER_PASSWORD: ${{ secrets.E2E_TEST_RUNNER_PASSWORD }}
+  E2E_SUBSCRIBER_CLIENT_SECRET: ${{ secrets.E2E_SUBSCRIBER_CLIENT_SECRET }}
+
+jobs:
+  agencyform-fixed-group-1:
+    name: AgencyForm Fixed Group 1
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      TEST_GROUP: fixed-group-1
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps
+
+      - name: Validate required environment variables
+        shell: bash
+        run: |
+          set -euo pipefail
+          missing=0
+
+          for key in DTP_ROOT_URL; do
+            if [ -z "${!key:-}" ]; then
+              echo "Missing required variable: $key"
+              missing=1
+            fi
+          done
+
+          if [ -z "${E2E_LOGIN_EMAIL:-}" ] && [ -z "${E2E_MYID_EMAIL:-}" ] && [ -z "${E2E_TEST_USER_EMAIL:-}" ]; then
+            echo "Missing login email configuration: set one of E2E_LOGIN_EMAIL, E2E_MYID_EMAIL, or E2E_TEST_USER_EMAIL"
+            missing=1
+          fi
+
+          if [ "$missing" -ne 0 ]; then
+            exit 1
+          fi
+
+      - name: Run AgencyForm Fixed Group 1 tests
+        run: |
+          npx playwright test \
+            "src/tests/AgencyForm/ApplicationForm.spec.ts" \
+            "src/tests/AgencyForm/CC Apply/ApplicationForm.spec.ts" \
+            "src/tests/AgencyForm/CC Apply/BYSMandatoryCheck.spec.ts" \
+            "src/tests/AgencyForm/CC Apply/ApplicantMyselfMandatoryCheck.spec.ts" \
+            "src/tests/AgencyForm/CC Apply/ApplicantNS.spec.ts" \
+            "src/tests/AgencyForm/CC Apply/ApplicantParentMandatoryCheck.spec.ts" \
+            "src/tests/AgencyForm/CC Apply/MyselfApplicant.spec.ts" \
+            "src/tests/AgencyForm/CC Apply/ParentApplicant.spec.ts"
+
+      - name: Upload Group 1 artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agencyform-fixed-group-1-artifacts
+          path: |
+            playwright-report
+            test-results
+          if-no-files-found: warn
+          retention-days: 14
+
+  agencyform-fixed-group-2:
+    name: AgencyForm Fixed Group 2
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      TEST_GROUP: fixed-group-2
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps
+
+      - name: Validate required environment variables
+        shell: bash
+        run: |
+          set -euo pipefail
+          missing=0
+
+          for key in DTP_ROOT_URL; do
+            if [ -z "${!key:-}" ]; then
+              echo "Missing required variable: $key"
+              missing=1
+            fi
+          done
+
+          if [ -z "${E2E_LOGIN_EMAIL:-}" ] && [ -z "${E2E_MYID_EMAIL:-}" ] && [ -z "${E2E_TEST_USER_EMAIL:-}" ]; then
+            echo "Missing login email configuration: set one of E2E_LOGIN_EMAIL, E2E_MYID_EMAIL, or E2E_TEST_USER_EMAIL"
+            missing=1
+          fi
+
+          if [ "$missing" -ne 0 ]; then
+            exit 1
+          fi
+
+      - name: Run AgencyForm Fixed Group 2 tests
+        run: |
+          npx playwright test \
+            "src/tests/AgencyForm/CC Apply/MyselfContact1.spec.ts" \
+            "src/tests/AgencyForm/CC Apply/MyselfContactMandatoryCheck.spec.ts" \
+            "src/tests/AgencyForm/CC Apply/MyselfContactsFO.spec.ts" \
+            "src/tests/AgencyForm/CC Apply/MyselfContactsPLG.spec.ts" \
+            "src/tests/AgencyForm/CC Apply/MyselfContactsSFM.spec.ts" \
+            "src/tests/AgencyForm/CC Apply/ParentContact1.spec.ts" \
+            "src/tests/AgencyForm/CC Apply/ParentContactMandatoryCheck.spec.ts"
+
+      - name: Upload Group 2 artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agencyform-fixed-group-2-artifacts
+          path: |
+            playwright-report
+            test-results
+          if-no-files-found: warn
+          retention-days: 14
+
+  agencyform-fixed-group-3:
+    name: AgencyForm Fixed Group 3
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      TEST_GROUP: fixed-group-3
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps
+
+      - name: Validate required environment variables
+        shell: bash
+        run: |
+          set -euo pipefail
+          missing=0
+
+          for key in DTP_ROOT_URL; do
+            if [ -z "${!key:-}" ]; then
+              echo "Missing required variable: $key"
+              missing=1
+            fi
+          done
+
+          if [ -z "${E2E_LOGIN_EMAIL:-}" ] && [ -z "${E2E_MYID_EMAIL:-}" ] && [ -z "${E2E_TEST_USER_EMAIL:-}" ]; then
+            echo "Missing login email configuration: set one of E2E_LOGIN_EMAIL, E2E_MYID_EMAIL, or E2E_TEST_USER_EMAIL"
+            missing=1
+          fi
+
+          if [ "$missing" -ne 0 ]; then
+            exit 1
+          fi
+
+      - name: Run AgencyForm Fixed Group 3 tests
+        run: |
+          npx playwright test \
+            "src/tests/AgencyForm/CC Apply/ParentContactsFO.spec.ts" \
+            "src/tests/AgencyForm/CC Apply/ParentContactsPLG.spec.ts" \
+            "src/tests/AgencyForm/CC Apply/ParentContactsSFM.spec.ts" \
+            "src/tests/AgencyForm/CC Apply/DisabilityMandatoryCheck.spec.ts" \
+            "src/tests/AgencyForm/CC Apply/HPMandatoryCheck.spec.ts" \
+            "src/tests/AgencyForm/CC Apply/ReviewMyself2Contacts.spec.ts" \
+            "src/tests/AgencyForm/CC Apply/ReviewParent2Contacts.spec.ts"
+
+      - name: Upload Group 3 artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agencyform-fixed-group-3-artifacts
+          path: |
+            playwright-report
+            test-results
+          if-no-files-found: warn
+          retention-days: 14
