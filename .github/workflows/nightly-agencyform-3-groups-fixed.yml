@@ -1,6 +1,6 @@
 name: Nightly AgencyForm Tests (3 Fixed Groups)
 
-on:
+'on':
   schedule:
     - cron: '15 0 * * *'
   workflow_dispatch:
@@ -26,6 +26,9 @@ jobs:
     name: AgencyForm Fixed Group 1
     runs-on: ubuntu-latest
     timeout-minutes: 120
+    defaults:
+      run:
+        working-directory: e2e
     env:
       TEST_GROUP: fixed-group-1
     steps:
@@ -84,8 +87,8 @@ jobs:
         with:
           name: agencyform-fixed-group-1-artifacts
           path: |
-            playwright-report
-            test-results
+            e2e/playwright-report
+            e2e/test-results
           if-no-files-found: warn
           retention-days: 14
 
@@ -93,6 +96,9 @@ jobs:
     name: AgencyForm Fixed Group 2
     runs-on: ubuntu-latest
     timeout-minutes: 120
+    defaults:
+      run:
+        working-directory: e2e
     env:
       TEST_GROUP: fixed-group-2
     steps:
@@ -150,8 +156,8 @@ jobs:
         with:
           name: agencyform-fixed-group-2-artifacts
           path: |
-            playwright-report
-            test-results
+            e2e/playwright-report
+            e2e/test-results
           if-no-files-found: warn
           retention-days: 14
 
@@ -159,6 +165,9 @@ jobs:
     name: AgencyForm Fixed Group 3
     runs-on: ubuntu-latest
     timeout-minutes: 120
+    defaults:
+      run:
+        working-directory: e2e
     env:
       TEST_GROUP: fixed-group-3
     steps:
@@ -216,7 +225,7 @@ jobs:
         with:
           name: agencyform-fixed-group-3-artifacts
           path: |
-            playwright-report
-            test-results
+            e2e/playwright-report
+            e2e/test-results
           if-no-files-found: warn
           retention-days: 14
