@@ -38,28 +38,16 @@ jobs:
         with:
           node-version: 22
 
-      - name: Enable Corepack
-        run: corepack enable
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 10
-          run_install: false
-
       - name: Verify package managers
         shell: bash
         run: |
           node --version
           npm --version
-          pnpm --version
 
       - name: Install dependencies
         shell: bash
         run: |
-          if [ -f pnpm-lock.yaml ]; then
-            pnpm install --frozen-lockfile
-          elif [ -f package-lock.json ]; then
+          if [ -f package-lock.json ]; then
             npm ci
           else
             npm install
@@ -131,28 +119,16 @@ jobs:
         with:
           node-version: 22
 
-      - name: Enable Corepack
-        run: corepack enable
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 10
-          run_install: false
-
       - name: Verify package managers
         shell: bash
         run: |
           node --version
           npm --version
-          pnpm --version
 
       - name: Install dependencies
         shell: bash
         run: |
-          if [ -f pnpm-lock.yaml ]; then
-            pnpm install --frozen-lockfile
-          elif [ -f package-lock.json ]; then
+          if [ -f package-lock.json ]; then
             npm ci
           else
             npm install
@@ -225,28 +201,16 @@ jobs:
         with:
           node-version: 22
 
-      - name: Enable Corepack
-        run: corepack enable
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 10
-          run_install: false
-
       - name: Verify package managers
         shell: bash
         run: |
           node --version
           npm --version
-          pnpm --version
 
       - name: Install dependencies
         shell: bash
         run: |
-          if [ -f pnpm-lock.yaml ]; then
-            pnpm install --frozen-lockfile
-          elif [ -f package-lock.json ]; then
+          if [ -f package-lock.json ]; then
             npm ci
           else
             npm install
