@@ -50,22 +50,31 @@ export class BeforeYouStartPage extends AgencyFormPage {
     }
 
     async selectApplyForNewCard() {
-        await this.beforeYouStartHeading.waitFor({ state: "visible", timeout: 60000 });
-        await this.page.waitForTimeout(1000);
+        let headingVisible = await this.beforeYouStartHeading.isVisible({ timeout: 15000 }).catch(() => false);
+        if (!headingVisible) {
+            await this.navigateToAgencyFormIfNeeded().catch(() => {});
+            headingVisible = await this.beforeYouStartHeading.isVisible({ timeout: 15000 }).catch(() => false);
+        }
+
+        if (!headingVisible) {
+            throw new Error(`Before You Start heading is not visible. Current URL: ${this.page.url()}`);
+        }
+
+        await this.page.waitForTimeout(1000).catch(() => {});
 
         const radioVisible = await this.applyForNewCardRadio.isVisible().catch(() => false);
         if (radioVisible) {
             await this.applyForNewCardRadio.check({ force: true }).catch(async () => {
                 await this.applyForNewCardRadio.click({ force: true });
             });
-            await this.page.waitForTimeout(500);
+            await this.page.waitForTimeout(500).catch(() => {});
             return;
         }
 
         const applyText = this.page.getByText("Apply for a new card").first();
         await applyText.waitFor({ state: "visible", timeout: 30000 });
         await applyText.click({ force: true });
-        await this.page.waitForTimeout(500);
+        await this.page.waitForTimeout(500).catch(() => {});
     }
 
     async completeBeforeYouStart() {

@@ -488,11 +488,15 @@ export class AgencyFormPage {
             const deadline = Date.now() + 30000;
 
             while (Date.now() < deadline) {
+                if (this.page.isClosed()) {
+                    throw new Error("Browser page closed while attempting identity provider login.");
+                }
+
                 const beginVisible = await this.beginButton.isVisible({ timeout: 1000 }).catch(() => false);
                 if (beginVisible) {
                     await this.beginButton.click().catch(() => {});
                     await this.page.waitForLoadState("domcontentloaded").catch(() => {});
-                    await this.page.waitForTimeout(1200);
+                    await this.page.waitForTimeout(1200).catch(() => {});
                 }
 
                 const continueCandidates: Locator[] = [
@@ -511,11 +515,11 @@ export class AgencyFormPage {
 
                     await candidate.click().catch(() => {});
                     await this.page.waitForLoadState("domcontentloaded").catch(() => {});
-                    await this.page.waitForTimeout(1500);
+                    await this.page.waitForTimeout(1500).catch(() => {});
                     return;
                 }
 
-                await this.page.waitForTimeout(1000);
+                await this.page.waitForTimeout(1000).catch(() => {});
             }
 
             throw new Error(

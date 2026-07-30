@@ -143,7 +143,7 @@ test('Parent Applicant', async ({ page }) => {
     const qdiContinueButton = page.getByRole('button', { name: /continue with queensland digital identity|continue with queensland/i }).first();
     const loginVisible = await loginHeading.isVisible({ timeout: 8000 }).catch(() => false);
     const qdiButtonVisible = await qdiContinueButton.isVisible({ timeout: 3000 }).catch(() => false);
-    const onAuthUrl = /preprod\.auth\.qld\.gov\.au|oauth-prep\.tmr\.qld\.gov\.au/i.test(page.url());
+    const onAuthUrl = /preprod\.auth\.qld\.gov\.au|oauth-prep\.tmr\.qld\.gov\.au|evte\.myid\.gov\.au/i.test(page.url());
     const authRequired = loginVisible || qdiButtonVisible || onAuthUrl;
 
     if (!authRequired) {
@@ -170,12 +170,20 @@ test('Parent Applicant', async ({ page }) => {
   };
 
   const goFromBysToContactDetails = async () => {
-    await handleDraftFailedModal();
-    await beforeYouStartPage.startNewIfDraftExists();
-    await handleDraftFailedModal();
-    await beforeYouStartPage.selectApplyForNewCard();
-    await beforeYouStartPage.clickSaveAndContinue();
-    await handleDraftFailedModal();
+    for (let attempt = 0; attempt < 3; attempt++) {
+      await handleDraftFailedModal();
+      await beforeYouStartPage.startNewIfDraftExists();
+      await handleDraftFailedModal();
+      await beforeYouStartPage.selectApplyForNewCard();
+      await beforeYouStartPage.clickSaveAndContinue();
+      await handleDraftFailedModal();
+
+      const reachedContactDetails = await contactDetailsHeading.isVisible({ timeout: 8000 }).catch(() => false);
+      if (reachedContactDetails) return;
+
+      const stillOnBys = await bysHeading.isVisible({ timeout: 5000 }).catch(() => false);
+      if (!stillOnBys) return;
+    }
   };
 
   const ensureBysWithFreshMyIdLogin = async () => {
