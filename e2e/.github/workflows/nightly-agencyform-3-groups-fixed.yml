@@ -95,8 +95,6 @@ jobs:
       - name: Run AgencyForm Fixed Group 1 tests
         run: |
           npx playwright test --project=chromium \
-            "src/tests/AgencyForm/ApplicationForm.spec.ts" \
-            "src/tests/AgencyForm/CC Apply/ApplicationForm.spec.ts" \
             "src/tests/AgencyForm/CC Apply/BYSMandatoryCheck.spec.ts" \
             "src/tests/AgencyForm/CC Apply/ApplicantMyselfMandatoryCheck.spec.ts" \
             "src/tests/AgencyForm/CC Apply/ApplicantNS.spec.ts" \

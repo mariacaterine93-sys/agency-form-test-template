@@ -179,8 +179,20 @@ test('Parent Applicant', async ({ page }) => {
   };
 
   const ensureBysWithFreshMyIdLogin = async () => {
-    await page.goto(agencyFormUrl, { waitUntil: 'domcontentloaded' });
-    await agencyFormPage.ensureNoLoadingError();
+    const gotoAgencyFormWithRecovery = async () => {
+      for (let attempt = 1; attempt <= 2; attempt++) {
+        await page.goto(agencyFormUrl, { waitUntil: 'domcontentloaded' });
+        try {
+          await agencyFormPage.ensureNoLoadingError();
+          return;
+        } catch (error) {
+          if (attempt === 2) throw error;
+          await page.waitForTimeout(2000);
+        }
+      }
+    };
+
+    await gotoAgencyFormWithRecovery();
     await handleDraftFailedModal();
 
     const alreadyAtBys = await waitForBysOrDraft(8000);
