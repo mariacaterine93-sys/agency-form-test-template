@@ -47,7 +47,7 @@ const emailBySpecFile: Record<string, string> = {
   'ApplicantMyselfMandatoryCheck.spec.ts': 'michael.black@fake.com.au',
   'ApplicantParentMandatoryCheck.spec.ts': 'debra.ward@fake.com.au',
   'MyselfApplicant.spec.ts': 'michael.west@fake.com.au',
-  'ParentApplicant.spec.ts': 'ictassurance+qdi20@smartservice.qld.gov.au',
+  'ParentApplicant.spec.ts': 'tom.waters@fake.com.au',
   'DisabilityMandatoryCheck.spec.ts': 'amanda.morrison@fake.com.au',
   'HPMandatoryCheck.spec.ts': 'david.pearson@fake.com.au',
   'ReviewParent2Contacts.spec.ts': 'IndustryRDTI27@test.gov.au',
