@@ -39,10 +39,33 @@ jobs:
         uses: actions/setup-node@v5
         with:
           node-version: 22
-          cache: npm
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+          run_install: false
+
+      - name: Verify package managers
+        shell: bash
+        run: |
+          node --version
+          npm --version
+          pnpm --version
 
       - name: Install dependencies
-        run: npm ci
+        shell: bash
+        run: |
+          if [ -f pnpm-lock.yaml ]; then
+            pnpm install --frozen-lockfile
+          elif [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm install
+          fi
 
       - name: Install Playwright browsers
         run: npx playwright install --with-deps
@@ -71,7 +94,7 @@ jobs:
 
       - name: Run AgencyForm Fixed Group 1 tests
         run: |
-          npx playwright test \
+          npx playwright test --project=chromium \
             "src/tests/AgencyForm/ApplicationForm.spec.ts" \
             "src/tests/AgencyForm/CC Apply/ApplicationForm.spec.ts" \
             "src/tests/AgencyForm/CC Apply/BYSMandatoryCheck.spec.ts" \
@@ -87,11 +110,11 @@ jobs:
         with:
           name: agencyform-fixed-group-1-artifacts
           path: |
-            e2e/playwright-report
-            e2e/test-results
-            playwright-report
-            test-results
-          if-no-files-found: warn
+            e2e/playwright-report/**
+            e2e/test-results/**
+            playwright-report/**
+            test-results/**
+          if-no-files-found: ignore
           retention-days: 14
 
   agencyform-fixed-group-2:
@@ -111,10 +134,33 @@ jobs:
         uses: actions/setup-node@v5
         with:
           node-version: 22
-          cache: npm
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+          run_install: false
+
+      - name: Verify package managers
+        shell: bash
+        run: |
+          node --version
+          npm --version
+          pnpm --version
 
       - name: Install dependencies
-        run: npm ci
+        shell: bash
+        run: |
+          if [ -f pnpm-lock.yaml ]; then
+            pnpm install --frozen-lockfile
+          elif [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm install
+          fi
 
       - name: Install Playwright browsers
         run: npx playwright install --with-deps
@@ -143,7 +189,7 @@ jobs:
 
       - name: Run AgencyForm Fixed Group 2 tests
         run: |
-          npx playwright test \
+          npx playwright test --project=chromium \
             "src/tests/AgencyForm/CC Apply/MyselfContact1.spec.ts" \
             "src/tests/AgencyForm/CC Apply/MyselfContactMandatoryCheck.spec.ts" \
             "src/tests/AgencyForm/CC Apply/MyselfContactsFO.spec.ts" \
@@ -158,11 +204,11 @@ jobs:
         with:
           name: agencyform-fixed-group-2-artifacts
           path: |
-            e2e/playwright-report
-            e2e/test-results
-            playwright-report
-            test-results
-          if-no-files-found: warn
+            e2e/playwright-report/**
+            e2e/test-results/**
+            playwright-report/**
+            test-results/**
+          if-no-files-found: ignore
           retention-days: 14
 
   agencyform-fixed-group-3:
@@ -182,10 +228,33 @@ jobs:
         uses: actions/setup-node@v5
         with:
           node-version: 22
-          cache: npm
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+          run_install: false
+
+      - name: Verify package managers
+        shell: bash
+        run: |
+          node --version
+          npm --version
+          pnpm --version
 
       - name: Install dependencies
-        run: npm ci
+        shell: bash
+        run: |
+          if [ -f pnpm-lock.yaml ]; then
+            pnpm install --frozen-lockfile
+          elif [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm install
+          fi
 
       - name: Install Playwright browsers
         run: npx playwright install --with-deps
@@ -214,7 +283,7 @@ jobs:
 
       - name: Run AgencyForm Fixed Group 3 tests
         run: |
-          npx playwright test \
+          npx playwright test --project=chromium \
             "src/tests/AgencyForm/CC Apply/ParentContactsFO.spec.ts" \
             "src/tests/AgencyForm/CC Apply/ParentContactsPLG.spec.ts" \
             "src/tests/AgencyForm/CC Apply/ParentContactsSFM.spec.ts" \
@@ -229,9 +298,9 @@ jobs:
         with:
           name: agencyform-fixed-group-3-artifacts
           path: |
-            e2e/playwright-report
-            e2e/test-results
-            playwright-report
-            test-results
-          if-no-files-found: warn
+            e2e/playwright-report/**
+            e2e/test-results/**
+            playwright-report/**
+            test-results/**
+          if-no-files-found: ignore
           retention-days: 14
