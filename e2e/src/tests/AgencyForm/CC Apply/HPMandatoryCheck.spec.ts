@@ -118,24 +118,6 @@ test('HP Mandatory Check', async ({ page }, testInfo) => {
     return false;
   };
 
-  const resumeLoginIfShown = async () => {
-    const loginHeading = page.getByRole('heading', { name: /login to continue/i });
-    const loginVisible = await loginHeading.isVisible({ timeout: 1500 }).catch(() => false);
-    if (!loginVisible) return;
-
-    await agencyFormPage.loginWithIdentity(loginIdentity.provider, loginEmail);
-  };
-
-  // NOTE: Avoid global draft-modal handlers because they can trigger during navigation
-  // and race with page/context lifecycle. Handle draft modals explicitly at stable checkpoints.
-
-  await page.addLocatorHandler(
-    page.getByRole('heading', { name: /login to continue/i }),
-    async () => {
-      await resumeLoginIfShown();
-    }
-  );
-
   const waitForBysOrDraft = async (timeoutMs: number): Promise<boolean> => {
     const deadline = Date.now() + timeoutMs;
 
@@ -158,8 +140,13 @@ test('HP Mandatory Check', async ({ page }, testInfo) => {
 
   const recoverAuthIfNeeded = async (): Promise<boolean> => {
     const loginHeading = page.getByRole('heading', { name: /login to continue/i });
-    const loginVisible = await loginHeading.isVisible({ timeout: 5000 }).catch(() => false);
-    if (!loginVisible) {
+    const qdiContinueButton = page.getByRole('button', { name: /continue with queensland digital identity|continue with queensland/i }).first();
+    const loginVisible = await loginHeading.isVisible({ timeout: 8000 }).catch(() => false);
+    const qdiButtonVisible = await qdiContinueButton.isVisible({ timeout: 3000 }).catch(() => false);
+    const onAuthUrl = /preprod\.auth\.qld\.gov\.au|oauth-prep\.tmr\.qld\.gov\.au|evte\.myid\.gov\.au/i.test(page.url());
+    const authRequired = loginVisible || qdiButtonVisible || onAuthUrl;
+
+    if (!authRequired) {
       return false;
     }
 
@@ -183,17 +170,37 @@ test('HP Mandatory Check', async ({ page }, testInfo) => {
   };
 
   const goFromBysToContactDetails = async () => {
-    await handleAnyDraftModal();
-    await beforeYouStartPage.startNewIfDraftExists();
-    await handleAnyDraftModal();
-    await beforeYouStartPage.selectApplyForNewCard();
-    await beforeYouStartPage.clickSaveAndContinue();
-    await handleAnyDraftModal();
+    for (let attempt = 0; attempt < 3; attempt++) {
+      await handleAnyDraftModal();
+      await beforeYouStartPage.startNewIfDraftExists();
+      await handleAnyDraftModal();
+      await beforeYouStartPage.selectApplyForNewCard();
+      await beforeYouStartPage.clickSaveAndContinue();
+      await handleAnyDraftModal();
+
+      const reachedContactDetails = await contactDetailsHeading.isVisible({ timeout: 8000 }).catch(() => false);
+      if (reachedContactDetails) return;
+
+      const stillOnBys = await bysHeading.isVisible({ timeout: 5000 }).catch(() => false);
+      if (!stillOnBys) return;
+    }
   };
 
   const ensureBysWithFreshMyIdLogin = async () => {
-    await page.goto(agencyFormUrl, { waitUntil: 'domcontentloaded' });
-    await agencyFormPage.ensureNoLoadingError();
+    const gotoAgencyFormWithRecovery = async () => {
+      for (let attempt = 1; attempt <= 2; attempt++) {
+        await page.goto(agencyFormUrl, { waitUntil: 'domcontentloaded' });
+        try {
+          await agencyFormPage.ensureNoLoadingError();
+          return;
+        } catch (error) {
+          if (attempt === 2) throw error;
+          await page.waitForTimeout(2000);
+        }
+      }
+    };
+
+    await gotoAgencyFormWithRecovery();
     await handleAnyDraftModal();
 
     const alreadyAtBys = await waitForBysOrDraft(8000);
